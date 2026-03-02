@@ -146,7 +146,6 @@ def evaluate_pruned(coeffs, biases, dataloader, device):
             imgs = imgs.to(device)
             targets = targets.to(device)
 
-            # 如果原模型有 Flatten
             imgs = imgs.view(imgs.size(0), -1)   # (batch_size, d)
 
             h = torch.relu(imgs @ W1_hat.T + b1_hat)
