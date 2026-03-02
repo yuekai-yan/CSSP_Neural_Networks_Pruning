@@ -110,7 +110,7 @@ def prune_model(model0, X, keep_ratio, method):
 
     # ------- Perform ID on Z^T -------
     M = Z.T    # (n, m)
-    M_np = M.detach().numpy()
+    M_np = M.detach().cpu().numpy()
     p, T = CSSP(method, M_np, k)
 
     # ------- Construct pruned parameters -------
@@ -132,6 +132,19 @@ def prune_model(model0, X, keep_ratio, method):
 
 
 def evaluate_pruned(coeffs, biases, dataloader, device):
+    """
+    Evaluate the pruned model
+    Inputs:
+        coeffs : list of torch.Tensor
+            List of pruned weight matrices     
+        biases : list of torch.Tensor
+        dataloader : test dataloader
+        device : torch.device
+    Outputs:
+        avg_loss : Average loss on the test set
+        accuracy : Accuracy on the test set
+        wrong_samples : List of tuples (index, predicted_label) for misclassified samples
+    """
     W1_hat, W2_hat = coeffs
     b1_hat, b2_hat = biases
 
@@ -139,10 +152,14 @@ def evaluate_pruned(coeffs, biases, dataloader, device):
 
     total_correct = 0
     total_samples = 0
-    total_loss = 0.0
+    total_loss = 0
+
+    wrong_samples = []
+    base_idx = 0
 
     with torch.no_grad():
         for imgs, targets in dataloader:
+            batch_size = targets.size(0)
             imgs = imgs.to(device)
             targets = targets.to(device)
 
@@ -155,10 +172,20 @@ def evaluate_pruned(coeffs, biases, dataloader, device):
             total_loss += loss.item() * targets.size(0)
 
             preds = outputs.argmax(dim=1)
-            total_correct += (preds == targets).sum().item()
-            total_samples += targets.size(0)
 
-    return total_loss / total_samples, total_correct / total_samples
+            total_correct += (preds == targets).sum().item()
+
+            # Record indices of misclassified samples
+            wrong_in_batch = torch.where(preds != targets)[0]
+            wrong_preds = preds[wrong_in_batch]
+            wrong_indices = base_idx + wrong_in_batch
+            for idx, p in zip(wrong_indices, wrong_preds):
+                wrong_samples.append((idx.item(), p.item()))
+           
+            total_samples += batch_size
+            base_idx += batch_size
+
+    return total_loss / total_samples, total_correct / total_samples, wrong_samples
 
 
 
