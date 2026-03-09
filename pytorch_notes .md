@@ -82,7 +82,7 @@ class Tudui(nn.Module):
         return x
 ```
 
-等价于利用`nn.Sequential
+等价于利用`nn.Sequential`
 
 ```python
 class Tudui(nn.Module):
@@ -106,4 +106,35 @@ class Tudui(nn.Module):
     def forward(self, x):
         x = self.model(x)
         return x
+```
+
+- CNN
+
+```python
+import torch
+import torch.nn as nn
+
+conv = nn.Conv2d(in_channels=1, out_channels=1, kernel_size=3)
+
+W = conv.weight.detach()
+b = conv.bias.detach()
+
+print("weight shape:", W.shape)   # torch.Size([1, 1, 3, 3])
+print("bias shape:", b.shape)     # torch.Size([1])
+
+kernel = W[0, 0]
+print("kernel shape:", kernel.shape)   # torch.Size([3, 3])
+print(kernel)
+print("bias:", b[0])
+```
+
+Outputs:
+```python
+weight shape: torch.Size([1, 1, 3, 3])
+bias shape: torch.Size([1])
+kernel shape: torch.Size([3, 3])
+tensor([[ 0.0660,  0.0873,  0.2084],
+        [ 0.0808,  0.2778, -0.0755],
+        [ 0.2692, -0.2681, -0.2698]])
+bias: tensor(0.3231)
 ```
