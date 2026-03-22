@@ -40,4 +40,4 @@ def ARP(A, k):
         v = W[jk, :]
         W = W @ (np.eye(k) - np.outer(v, v) / np.linalg.norm(v)**2)
  
-    return J
+    return J, k
