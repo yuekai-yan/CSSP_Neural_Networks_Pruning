@@ -343,16 +343,11 @@ def iterative_pruning(model0, X, input_shape, rho, step_size, method, S=None, de
         input_shape:    tuple, shape of the input image, e.g. (1, 28, 28), (3, 32, 32)
         rho:            float, flop ratio
         step_size:      float, keep_ratio for each layer
+        method:         str, CSSP method
         S:              set of layer indices not to prune
 
     Outputs:
-        params:         list of dict, pruned parameters for each layer
-                        layer_type:     str, type of the layer (e.g., 'Conv2d', 'Linear', 'Flatten')
-                        layer_idx:      int, index of the layer in the model
-                        weight:         torch.Tensor, pruned weight matrices 
-                                        (out_neurons, in_neurons) -> 'linear'
-                                        (out_channels, in_channels, kernel_size, kernel_size) -> 'conv'
-                        bias:         torch.Tensor, pruned bias vectors
+        model:          torch.nn.Module, model after iterative pruning
     """
     if device is None:
         try:
@@ -371,6 +366,9 @@ def iterative_pruning(model0, X, input_shape, rho, step_size, method, S=None, de
     F = compute_total_flops(model0.model, input_shape_origin)
     F0 = F
 
+    # initialize model
+    model = model0
+
     while F > F0 * rho:
         infos = []    # list of dict to store the prunability infos for each layer
         input_shape = input_shape_origin
@@ -379,11 +377,11 @@ def iterative_pruning(model0, X, input_shape, rho, step_size, method, S=None, de
         for i, layer in enumerate(params[:-1]):
 
             if layer['layer_idx'] in S or layer['layer_type'] == 'Flatten':
-                forward_matrix = forward_from_a_to_b(model0.model, forward_matrix, layer['layer_idx'], params[i+1]['layer_idx'])
+                forward_matrix = forward_from_a_to_b(model.model, forward_matrix, layer['layer_idx'], params[i+1]['layer_idx'])
                 input_shape = forward_matrix.shape[1:]
                 continue
             
-            forward_matrix = forward_from_a_to_b(model0.model, forward_matrix, layer['layer_idx'], params[i+1]['layer_idx']) 
+            forward_matrix = forward_from_a_to_b(model.model, forward_matrix, layer['layer_idx'], params[i+1]['layer_idx']) 
                                         # (batch_size, out_neurons) -> 'linear'
                                         # (batch_size, out_channels, out_height, out_width) -> 'conv' / 'conv'+'pool'
 
@@ -409,7 +407,7 @@ def iterative_pruning(model0, X, input_shape, rho, step_size, method, S=None, de
             else:
                 end = params[i+1]['layer_idx']
             
-            flop = compute_total_flops(model0.model[begin: end+1], input_shape)
+            flop = compute_total_flops(model.model[begin: end+1], input_shape)
 
             input_shape = forward_matrix.shape[1:]
 
@@ -437,7 +435,7 @@ def iterative_pruning(model0, X, input_shape, rho, step_size, method, S=None, de
                             # (out_channels,) -> 'conv'
         m = W.shape[0]
 
-        Z = forward_to_layer(model0.model, X, params[l+1]['layer_idx']) # (batch_size, out_neurons) -> 'linear'
+        Z = forward_to_layer(model.model, X, params[l+1]['layer_idx']) # (batch_size, out_neurons) -> 'linear'
                             # (batch_size, out_channels, out_height, out_width) -> 'conv' / 'conv'+'pool'
 
         match layer_type:
@@ -520,12 +518,12 @@ def iterative_pruning(model0, X, input_shape, rho, step_size, method, S=None, de
             params[l+2] = next_layer_info_new
 
 
-        model0 = load_pruned_model(model0, params)
-        F = compute_total_flops(model0.model, input_shape_origin)
+        model = load_pruned_model(model, params)
+        F = compute_total_flops(model.model, input_shape_origin)
 
     print(f"Flops after pruning: {F0} -> {F}")
 
-    return params
+    return model
 
 
 
