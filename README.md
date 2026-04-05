@@ -2,7 +2,9 @@
 
 ## Overview
 
-Our pruning approach is built upon **column subset selection (CSS)**, a classical technique from **numerical linear algebra**. By selecting informative columns from weight matrices, the method preserves their essential structure and achieves **structured pruning** through the reduction of layer or channel dimensions. This structured design makes the approach naturally compatible with other model compression techniques, including **knowledge distillation** and **quantization**. Therefore, it is particularly well suited to real-world deployment scenarios involving **edge devices**, **mobile platforms**, **embedded AI systems**, and other resource-constrained environments where inference efficiency and hardware-aware model design are of central importance.
+Our pruning approach is built upon **column subset selection (CSS)**, a classical technique from **numerical linear algebra**. By selecting informative columns from weight matrices, the method preserves their essential structure and achieves **structured pruning** through the reduction of layer or channel dimensions. This structured design makes the approach naturally compatible with other model compression techniques, including **knowledge distillation** and **quantization**.
+ 
+Therefore, it is particularly well suited to real-world deployment scenarios involving **edge devices**, **mobile platforms**, **embedded AI systems**, and other resource-constrained environments where inference efficiency and hardware-aware model design are of central importance.
 
 ## Method
 
