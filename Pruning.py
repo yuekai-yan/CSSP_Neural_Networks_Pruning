@@ -6,6 +6,7 @@ from CSSP.ARP import ARP
 from CSSP.StrongRRQR import sRRQR_rank, sRRQR_tol
 from CSSP.RPCholesky import RPCholesky, RPCholesky_tol
 from scipy.linalg import qr
+from model import ConvBNReLU, LinearBNReLU
 
 def CSSP(method, M, criterion, value):
     """
@@ -70,10 +71,25 @@ def extract_params(model):
             layer_info = {
                 'layer_type': type(layer).__name__,    # 'Conv2d' or 'Linear'
                 'layer_idx': idx,
-                'weight': layer.weight,
-                'bias': layer.bias
+                'weight': layer.weight.detach().clone(),
+                'bias': layer.bias.detach().clone()
             }
             params.append(layer_info)
+
+        elif isinstance(layer, (ConvBNReLU, LinearBNReLU)):
+            conv = layer.block[0]
+            bn = layer.block[1]
+
+            params.append({
+                'layer_type': type(layer).__name__,
+                'layer_idx': idx,
+                'weight': conv.weight.detach().clone() if bn.weight is not None else None,
+                'bias': conv.bias.detach().clone() if conv.bias is not None else None,
+                'bn_weight': bn.weight.detach().clone() if bn.weight is not None else None,
+                'bn_bias': bn.bias.detach().clone() if bn.bias is not None else None,
+                'running_mean': bn.running_mean.detach().clone(),
+                'running_var': bn.running_var.detach().clone()
+            })
 
         elif isinstance(layer, nn.Flatten):
             layer_info = {
@@ -266,6 +282,10 @@ def compute_total_flops(model: nn.Sequential, input_shape):
         - nn.ReLU      ->    out.numel()
         - nn.MaxPool2d ->    out.numel() * (k_h * k_w)
         - nn.Flatten   ->    0
+        - LinearBNReLU ->   2 * layer.block[0].in_features * layer.block[0].out_features
+                          + 2 * out.numel()
+        - ConvBNReLU   ->   2 * in_channels * out_channels * k_h * k_w * out_h * out_w
+                          + 2 * out.numel()
 
     Inputs:
         model: an nn.Sequential model
@@ -293,11 +313,35 @@ def compute_total_flops(model: nn.Sequential, input_shape):
             x = out
 
         elif isinstance(layer, nn.Linear):
-            if x.dim() > 2:
-                x = x.view(x.size(0), -1)
-
             out = layer(x)
             layer_flops = 2 * layer.in_features * layer.out_features
+
+            total_flops += layer_flops
+            x = out
+
+        elif isinstance(layer, LinearBNReLU):
+            out = layer(x)
+            linear = layer.block[0]
+
+            layer_flops = (
+                2 * linear.in_features * linear.out_features
+                + 2 * out.numel()
+            )
+            total_flops += layer_flops
+            x = out
+
+        elif isinstance(layer, ConvBNReLU):
+            out = layer(x)
+            conv = layer.block[0]
+
+            _, out_channels, out_h, out_w = out.shape
+            k_h, k_w = conv.kernel_size
+            in_channels = conv.in_channels
+
+            layer_flops = (
+                2 * in_channels * out_channels * k_h * k_w * out_h * out_w
+                + 2 * out.numel()
+            )
 
             total_flops += layer_flops
             x = out
@@ -326,9 +370,136 @@ def compute_total_flops(model: nn.Sequential, input_shape):
             x = layer(x)
 
         else:
-            raise TypeError(f"Unsupported layer type: {layer.__class__.__name__}")
+            x = layer(x)
 
     return total_flops
+
+
+
+
+def layer_pruning(params, l, layer_type, global_idx, X, model, method, keep_rank, device):
+    
+    W = params[l]['weight']   # (m, d) -> 'linear' / 'LinearBNReLU'
+                            # (out_channels, in_channels, kernel_size, kernel_size) -> 'conv' / 'ConvBNReLU'   
+    b = params[l]['bias']   # (m,) -> 'linear' / 'LinearBNReLU'
+                        # (out_channels,) -> 'conv' / 'ConvBNReLU'
+    m = W.shape[0]
+
+    Z = forward_to_layer(model.model, X, params[l+1]['layer_idx']) # (batch_size, out_neurons) -> 'linear'
+                                                                    # 'linear' + 'BN'
+                        # (batch_size, out_channels, out_height, out_width) -> 'conv' / 'conv'+'pool' /
+                                                                              #  'conv' + 'BN' + 'pool'
+
+    match layer_type:
+        case 'Linear' | 'LinearBNReLU':
+            p, T, k = CSSP(method, Z, 'keep_rank', keep_rank)    # T -> (k, m)
+            # construct pruned parameters
+            W_hat = W.index_select(0, p)   # 1st dimension of 'weight' -> output
+            b_hat = b.index_select(0, p)
+            print(f"number of out_neurons: {m} -> {k}")
+            print() 
+                                        
+        case 'Conv2d' | 'ConvBNReLU':                
+            Z_reshaped = Z.reshape(Z.shape[1], -1)
+            M = Z_reshaped.T
+            p, T, k = CSSP(method, M, 'keep_rank', keep_rank)    # T -> (k, m)
+            # construct pruned parameters
+            W_hat = W.index_select(0, p)    # 1st dimension of 'weight' -> output
+            b_hat = b.index_select(0, p)
+            print(f"number of out_channels: {m} -> {k}")
+            print()
+
+    # save the parameters for current layer
+    if layer_type in ('Linear', 'Conv2d'):
+        current_layer_info_new = {
+            'layer_type': layer_type,
+            'layer_idx': global_idx,
+            'weight':  W_hat if W is not None else None,
+            'bias': b_hat if b is not None else None
+        }
+    else:
+        bn_weight = params[l]['bn_weight']
+        bn_bias = params[l]['bn_bias']
+        bn_mean = params[l]['running_mean']
+        bn_var = params[l]['running_var']
+        bn_weight_hat = bn_weight.index_select(0, p)
+        bn_bias_hat = bn_bias.index_select(0, p)
+        bn_mean_hat = bn_mean.index_select(0, p)
+        bn_var_hat = bn_var.index_select(0, p)
+        current_layer_info_new = {
+            'layer_type': layer_type,
+            'layer_idx': global_idx,
+            'weight':  W_hat if W is not None else None,
+            'bias': b_hat if b is not None else None,
+            'bn_weight': bn_weight_hat if bn_weight is not None else None,
+            'bn_bias': bn_bias_hat if bn_bias is not None else None,
+            'running_mean': bn_mean_hat if bn_mean is not None else None,
+            'running_var': bn_var_hat if bn_var is not None else None
+        }
+    params[l] = current_layer_info_new
+
+    # ------- deal with the effect on the next layer -------
+    layer_type_next = params[l+1]['layer_type']
+    global_idx_next = params[l+1]['layer_idx']
+
+    if layer_type_next != 'Flatten':
+        local_idx = l + 1
+        W_next = params[l+1]['weight']   # (out_neurons, in_neurons) -> 'linear'
+                        # (out_channels, in_channels, kernel_size, kernel_size) -> 'conv'   
+        b_next = params[l+1]['bias']   # (out_neurons,) -> 'linear'
+                        # (out_channels,) -> 'conv'
+
+        match layer_type_next:
+            case 'Linear' | 'LinearBNReLU':
+                W_hat_next = W_next @ T.T    # in_neurons: m -> k, i.e. (out_neurons, m) -> (out_neurons, k)
+                b_hat_next = b_next.clone()                 
+                                
+            case 'Conv2d' | 'ConvBNReLU':                
+                W_hat_next = torch.einsum('km, omhw -> okhw', T, W_next)
+                b_hat_next = b_next.clone()
+
+    else:
+        local_idx = l + 2
+        size = Z.shape[2] * Z.shape[3]
+        I = torch.eye(size).to(device)
+        T = torch.kron(T, I).to(device)    # (k * size, m * size)
+        # next layer type must be 'Linear'
+        layer_type_next = params[l+2]['layer_type']
+        global_idx_next = params[l+2]['layer_idx']
+        W_next = params[l+2]['weight']    # (out_neurons, m * size)
+        b_next = params[l+2]['bias']      # (out_neurons,)
+
+        W_hat_next = W_next @ T.T         # (out_neurons, k * size)
+        b_hat_next = b_next.clone()
+
+
+    if layer_type_next in ('Linear', 'Conv2d'):
+        next_layer_info_new = {
+            'layer_type': layer_type_next,
+            'layer_idx': global_idx_next,
+            'weight':  W_hat_next if W_next is not None else None,
+            'bias': b_hat_next if b_next is not None else None
+        }
+    else:
+        bn_weight_next = params[local_idx]['bn_weight']
+        bn_bias_next = params[local_idx]['bn_bias']
+        bn_mean_next = params[local_idx]['running_mean']
+        bn_var_next = params[local_idx]['running_var']
+        next_layer_info_new = {
+            'layer_type': layer_type_next,
+            'layer_idx': global_idx_next,
+            'weight':  W_hat_next if W_next is not None else None,
+            'bias': b_hat_next if b_next is not None else None,
+            'bn_weight': bn_weight_next.clone() if bn_weight is not None else None,
+            'bn_bias': bn_bias_next.clone() if bn_bias is not None else None,
+            'running_mean': bn_mean_next.clone() if bn_mean is not None else None,
+            'running_var': bn_var_next.clone() if bn_var is not None else None
+        }
+    params[local_idx] = next_layer_info_new
+
+    return params
+
+
 
 
 
@@ -388,10 +559,10 @@ def iterative_pruning(model0, X, input_shape, rho, step_size, method, S=None, de
             W = layer['weight']   # (m, d) -> 'linear'
                                 # (out_channels, in_channels, kernel_size, kernel_size) -> 'conv'
         
-            if layer['layer_type'] == 'Linear':
+            if layer['layer_type'] in ['Linear', 'LinearBNReLU']:
                 M = forward_matrix.detach().cpu().numpy()
-                _, R, _ = qr(M, mode="economic", pivoting=True)    # Z[:, P] = Q @ R
-            elif layer['layer_type'] == 'Conv2d':
+                _, R, _ = qr(M, mode="economic", pivoting=True)    # M @ P = Q @ R
+            elif layer['layer_type'] in ['Conv2d', 'ConvBNReLU']:
                 forward_reshaped = forward_matrix.reshape(forward_matrix.shape[1], -1)
                 M = forward_reshaped.detach().cpu().numpy()
                 _, R, _ = qr(M.T, mode="economic", pivoting=True)
@@ -427,98 +598,10 @@ def iterative_pruning(model0, X, input_shape, rho, step_size, method, S=None, de
         layer_type = best['layer_type']
 
         print(f"-------Begin pruning-------\nlayer_idx: {global_idx}, layer_type: {layer_type}")
-
-
-        W = params[l]['weight']   # (m, d) -> 'linear'
-                            # (out_channels, in_channels, kernel_size, kernel_size) -> 'conv'   
-        b = params[l]['bias']   # (m,) -> 'linear'
-                            # (out_channels,) -> 'conv'
-        m = W.shape[0]
-
-        Z = forward_to_layer(model.model, X, params[l+1]['layer_idx']) # (batch_size, out_neurons) -> 'linear'
-                            # (batch_size, out_channels, out_height, out_width) -> 'conv' / 'conv'+'pool'
-
-        match layer_type:
-            case 'Linear':
-                p, T, k = CSSP(method, Z, 'keep_rank', keep_rank)    # T -> (k, m)
-                # construct pruned parameters
-                W_hat = W.index_select(0, p)   # 1st dimension of 'weight' -> output
-                b_hat = b.index_select(0, p)
-                print(f"number of out_neurons: {m} -> {k}")
-                print() 
-                
-                                
-            case 'Conv2d':                
-                Z_reshaped = Z.reshape(Z.shape[1], -1)
-                M = Z_reshaped.T
-                p, T, k = CSSP(method, M, 'keep_rank', keep_rank)    # T -> (k, m)
-                # construct pruned parameters
-                W_hat = W.index_select(0, p)    # 1st dimension of 'weight' -> output
-                b_hat = b.index_select(0, p)
-                print(f"number of out_channels: {m} -> {k}")
-                print()
-
-
-        current_layer_info_new = {
-            'layer_type': layer_type,
-            'layer_idx': global_idx,
-            'weight':  W_hat if W is not None else None,
-            'bias': b_hat if b is not None else None
-        }
-        params[l] = current_layer_info_new
-
-        # deal with the effect on the next layer
-        layer_type_next = params[l+1]['layer_type']
-        global_idx_next = params[l+1]['layer_idx']
-
-        if layer_type_next != 'Flatten':
-
-            W_next = params[l+1]['weight']   # (out_neurons, in_neurons) -> 'linear'
-                            # (out_channels, in_channels, kernel_size, kernel_size) -> 'conv'   
-            b_next = params[l+1]['bias']   # (out_neurons,) -> 'linear'
-                            # (out_channels,) -> 'conv'
-
-            match layer_type_next:
-                case 'Linear':
-                    W_hat_next = W_next @ T.T    # in_neurons: m -> k, i.e. (out_neurons, m) -> (out_neurons, k)
-                    b_hat_next = b_next.clone()                    
-                                    
-                case 'Conv2d':                
-                    W_hat_next = torch.einsum('km, omhw -> okhw', T, W_next)
-                    b_hat_next = b_next.clone()
-            
-            next_layer_info_new = {
-                'layer_type': layer_type_next,
-                'layer_idx': global_idx_next,
-                'weight':  W_hat_next if W_next is not None else None,
-                'bias': b_hat_next if b_next is not None else None
-            }
-            params[l+1] = next_layer_info_new
-
-
-        else:
-            size = Z.shape[2] * Z.shape[3]
-            I = torch.eye(size).to(device)
-            T = torch.kron(T, I).to(device)    # (k * size, m * size)
-            # next layer type must be 'Linear'
-            layer_type_next = params[l+2]['layer_type']
-            global_idx_next = params[l+2]['layer_idx']
-            W_next = params[l+2]['weight']    # (out_neurons, m * size)
-            b_next = params[l+2]['bias']      # (out_neurons,)
-
-            W_hat_next = W_next @ T.T         # (out_neurons, k * size)
-            b_hat_next = b_next.clone()
-
-            next_layer_info_new = {
-                'layer_type': layer_type_next,
-                'layer_idx': global_idx_next,
-                'weight':  W_hat_next if W_next is not None else None,
-                'bias': b_hat_next if b_next is not None else None
-            }
-            params[l+2] = next_layer_info_new
-
+        params = layer_pruning(params, l, layer_type, global_idx, X, model, method, keep_rank, device)
 
         model = load_pruned_model(model, params)
+
         F = compute_total_flops(model.model, input_shape_origin)
 
     print(f"Flops after pruning: {F0} -> {F}")
@@ -576,8 +659,6 @@ def load_pruned_model(model0, params_new, device=None):
                 continue
 
             case "Linear":
-                old_layer = seq[idx]
-
                 W = p["weight"].to(device)
                 b = p["bias"].to(device)
 
@@ -619,7 +700,70 @@ def load_pruned_model(model0, params_new, device=None):
 
                 seq[idx] = new_layer
 
+            case 'LinearBNReLU':
+                W = p["weight"].to(device)
+                b = p["bias"].to(device)
+                bn_weight = p["bn_weight"].to(device)
+                bn_bias = p["bn_bias"].to(device)
+                running_mean = p["running_mean"].to(device)
+                running_var = p["running_var"].to(device)
 
+                out_features, in_features = W.shape
+
+                new_layer = LinearBNReLU(
+                    in_features=in_features,
+                    out_features=out_features
+                ).to(device)
+
+                with torch.no_grad():
+                    # Linear
+                    new_layer.block[0].weight.copy_(W)
+                    new_layer.block[0].bias.copy_(b)
+
+                    # BatchNorm affine parameters
+                    new_layer.block[1].weight.copy_(bn_weight)
+                    new_layer.block[1].bias.copy_(bn_bias)
+                    # BatchNorm running statistics
+                    new_layer.block[1].running_mean.copy_(running_mean)
+                    new_layer.block[1].running_var.copy_(running_var)
+
+                seq[idx] = new_layer
+
+            case "ConvBNReLU":
+                old_layer = seq[idx]
+
+                W = p["weight"].to(device)
+                b = p["bias"].to(device)
+                bn_weight = p["bn_weight"].to(device) 
+                bn_bias = p["bn_bias"].to(device)
+                running_mean = p["running_mean"].to(device)
+                running_var = p["running_var"].to(device)
+
+                out_channels, in_channels, kH, kW = W.shape
+
+                new_layer = ConvBNReLU(
+                    in_channels=in_channels,
+                    out_channels=out_channels,
+                    kernel_size=(kH, kW),
+                    stride=old_layer.block[0].stride,
+                    padding=old_layer.block[0].padding
+                ).to(device)
+
+                with torch.no_grad():
+                    # Conv
+                    new_layer.block[0].weight.copy_(W)
+                    new_layer.block[0].bias.copy_(b)
+
+                    # BatchNorm affine parameters
+                    new_layer.block[1].weight.copy_(bn_weight)
+                    new_layer.block[1].bias.copy_(bn_bias)
+                    # BatchNorm running statistics
+                    new_layer.block[1].running_mean.copy_(running_mean)
+                    new_layer.block[1].running_var.copy_(running_var)
+
+                seq[idx] = new_layer
+                
+    model.eval()
     return model
 
 
