@@ -400,7 +400,7 @@ def layer_pruning(params, l, layer_type, global_idx, X, model, method, keep_rank
             print() 
                                         
         case 'Conv2d' | 'ConvBNReLU':                
-            Z_reshaped = Z.reshape(Z.shape[1], -1)
+            Z_reshaped = Z.permute(1, 0, 2, 3).reshape(Z.shape[1], -1)
             M = Z_reshaped.T
             p, T, k = CSSP(method, M, 'keep_rank', keep_rank)    # T -> (k, m)
             # construct pruned parameters
@@ -504,7 +504,7 @@ def layer_pruning(params, l, layer_type, global_idx, X, model, method, keep_rank
 
 
 
-def iterative_pruning(model0, X, input_shape, rho, step_size, method, S=None, device=None):
+def iterative_pruning(model0, X, input_shape, rho, step_size, method, train_loader=None, S=None, device=None, use_bn_recalibration=True, bn_batches=20):
     """
     Prune the model using CSSP-based method, for layers of type 'Linear' and 'Conv'
     Inputs:
@@ -558,12 +558,12 @@ def iterative_pruning(model0, X, input_shape, rho, step_size, method, S=None, de
 
             W = layer['weight']   # (m, d) -> 'linear'
                                 # (out_channels, in_channels, kernel_size, kernel_size) -> 'conv'
-        
+
             if layer['layer_type'] in ['Linear', 'LinearBNReLU']:
                 M = forward_matrix.detach().cpu().numpy()
                 _, R, _ = qr(M, mode="economic", pivoting=True)    # M @ P = Q @ R
             elif layer['layer_type'] in ['Conv2d', 'ConvBNReLU']:
-                forward_reshaped = forward_matrix.reshape(forward_matrix.shape[1], -1)
+                forward_reshaped = forward_matrix.permute(1, 0, 2, 3).reshape(forward_matrix.shape[1], -1)
                 M = forward_reshaped.detach().cpu().numpy()
                 _, R, _ = qr(M.T, mode="economic", pivoting=True)
 
@@ -601,6 +601,9 @@ def iterative_pruning(model0, X, input_shape, rho, step_size, method, S=None, de
         params = layer_pruning(params, l, layer_type, global_idx, X, model, method, keep_rank, device)
 
         model = load_pruned_model(model, params)
+        # BatchNorm recalibration
+        if use_bn_recalibration and train_loader is not None:
+            bn_recalibration(model, train_loader, device, num_batches=bn_batches)
 
         F = compute_total_flops(model.model, input_shape_origin)
 
@@ -608,8 +611,31 @@ def iterative_pruning(model0, X, input_shape, rho, step_size, method, S=None, de
 
     return model
 
+def bn_recalibration(model, loader, device, num_batches=20):
+    # Put the whole model into evaluation mode first
+    # so that non-BN layers (e.g. Dropout) stay in inference mode
+    model.eval()
 
+    # Find all BatchNorm layers, reset their running statistics,
+    # and switch only BN layers to training mode
+    for m in model.modules():
+        if isinstance(m, (nn.BatchNorm1d, nn.BatchNorm2d)):
+            m.running_mean.zero_()
+            m.running_var.fill_(1)
+            m.num_batches_tracked.zero_()
+            m.train()
 
+    # Run several batches forward without gradients
+    # to recompute BN running statistics
+    with torch.no_grad():
+        for i, (imgs, _) in enumerate(loader):
+            if i >= num_batches:
+                break
+            imgs = imgs.to(device)
+            model(imgs)
+
+    # Switch the whole model back to evaluation mode
+    model.eval()
 
 
 
