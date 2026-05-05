@@ -102,7 +102,8 @@ def sRRQR_rank(A, f, k, truncate=False):
     # ------------------------------------------------------------------ #
     # Pivoted QR  (most expensive step)                                    #
     # ------------------------------------------------------------------ #
-    Q, R, p = qr(A, pivoting=True)      # A[:, p] = Q @ R
+    # economy-size pivoted QR: Q (m, min(m,n)), R (min(m,n), n)
+    Q, R, p = qr(A, mode="economic", pivoting=True)      # A[:, p] = Q @ R
     min_mn  = min(m, n)
     Q = Q[:, :min_mn]
     R = R[:min_mn, :]
