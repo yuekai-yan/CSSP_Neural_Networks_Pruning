@@ -436,8 +436,8 @@ def layer_pruning(params, l, layer_type, global_idx, X, model, method, keep_rank
             # construct pruned parameters
             W_hat = W.index_select(0, p)   # 1st dimension of 'weight' -> output
             b_hat = b.index_select(0, p)
-            print(f"number of out_neurons: {m} -> {k}")
-            print() 
+            #print(f"number of out_neurons: {m} -> {k}")
+            #print() 
                                         
         case 'Conv2d' | 'ConvBNReLU':                
             Z_reshaped = Z.permute(1, 0, 2, 3).reshape(Z.shape[1], -1)
@@ -450,8 +450,8 @@ def layer_pruning(params, l, layer_type, global_idx, X, model, method, keep_rank
             # construct pruned parameters
             W_hat = W.index_select(0, p)    # 1st dimension of 'weight' -> output
             b_hat = b.index_select(0, p)
-            print(f"number of out_channels: {m} -> {k}")
-            print()
+            #print(f"number of out_channels: {m} -> {k}")
+            #print()
 
     # save the parameters for current layer
     if layer_type in ('Linear', 'Conv2d'):
@@ -599,6 +599,7 @@ def iterative_pruning(model0, X, input_shape, rho, step_size, method, crit, test
     layerwise_history = {}
 
     for j in rho:
+        print(f"-------Begin pruning-------\nMethod: {method}\tTarget ratio: {j:.2f}")
         while F > F0 * j:
             infos = []    # list of dict to store the prunability infos for each layer
             input_shape = input_shape_origin
@@ -659,7 +660,7 @@ def iterative_pruning(model0, X, input_shape, rho, step_size, method, crit, test
             keep_rank = best['keep_rank']
             layer_type = best['layer_type']
 
-            print(f"-------Begin pruning-------\nlayer_idx: {global_idx}, layer_type: {layer_type}")
+            #print(f"-------Begin pruning-------\nlayer_idx: {global_idx}, layer_type: {layer_type}")
             params = layer_pruning(params, l, layer_type, global_idx, X, model, method, keep_rank, tol, device)
 
             model = load_pruned_model(model, params)
@@ -679,10 +680,9 @@ def iterative_pruning(model0, X, input_shape, rho, step_size, method, crit, test
         test_losses.append(test_loss)
         layerwise_history[f"{j:.2f}"] = get_layerwise_retention(params, original_widths)
         print(
-        f"Target ratio: {j:.2f}, "
         f"Current ratio: {F / F0:.4f}, "
         f"Accuracy: {acc:.4f}, "
-        f"Current FLOPs ratio: {compute_total_flops(model.model, input_shape_origin)/compute_total_flops(model0.model, input_shape_origin)}"
+        f"Current FLOPs ratio: {compute_total_flops(model.model, input_shape_origin)/compute_total_flops(model0.model, input_shape_origin):.4f}"
         )
 
     if crit == "flops":

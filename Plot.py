@@ -279,3 +279,41 @@ def plot_fixed_layer_relerr(relerr_results, keep_ratios, layer_idx, svd_bound=No
 
     plt.tight_layout()
     plt.show()
+
+
+
+
+def plot_structured_vs_magnitude_heatmaps(layerwise_results, ratio_key, structured_methods=("StrongRRQR", "RPCholesky", "ARP"), magnitude_method="magnitude_pruning"):
+    plt.rcParams["font.size"] = 8
+    plt.rcParams["axes.titlesize"] = 10
+    plt.rcParams["axes.labelsize"] = 8
+    plt.rcParams["xtick.labelsize"] = 8
+    plt.rcParams["ytick.labelsize"] = 8
+
+    structured_data = {m: layerwise_results[m][ratio_key] for m in structured_methods}
+    magnitude_data = {magnitude_method: layerwise_results[magnitude_method][ratio_key]}
+
+    structured_layers = set().union(*[set(d.keys()) for d in structured_data.values()])
+    magnitude_layers = set(magnitude_data[magnitude_method].keys())
+    common_layers = sorted(structured_layers & magnitude_layers)
+    
+    fig, axes = plt.subplots(2, 1, figsize=(10, 4), dpi=200, gridspec_kw={"height_ratios": [3, 1]})
+
+    for ax, heatmap_data, title in zip(axes, [structured_data, magnitude_data], [f"CSSP: channel / neuron retention at params ratio = {ratio_key}", f"Magnitude pruning: nonzero-weight retention at params ratio = {ratio_key}"]):
+        methods = list(heatmap_data.keys())
+        layers = common_layers
+        data = np.array([[heatmap_data[method].get(layer, np.nan) for layer in layers] for method in methods])
+
+        im = ax.imshow(data, aspect="auto", vmin=0, vmax=1, cmap="viridis")
+
+        ax.set_xticks(np.arange(len(layers)))
+        ax.set_xticklabels(layers)
+        ax.set_yticks(np.arange(len(methods)))
+        ax.set_yticklabels(methods, fontweight="bold")
+        ax.set_xlabel("Layer Index")
+        ax.set_title(title)
+
+    fig.subplots_adjust(right=0.88, hspace=0.75)
+    cbar_ax = fig.add_axes([0.90, 0.25, 0.015, 0.5]) 
+    fig.colorbar(im, cax=cbar_ax)
+    plt.show()

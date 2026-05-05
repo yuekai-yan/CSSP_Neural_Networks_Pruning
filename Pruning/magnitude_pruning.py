@@ -63,6 +63,11 @@ def iterative_magnitude_pruning(
         S = {len(model.model) - 1}
 
     params = extract_params(model.model)
+    original_widths = {
+        layer["layer_idx"]: layer["weight"].shape[0]
+        for layer in params
+        if layer["layer_type"] in ["Conv2d", "ConvBNReLU", "Linear", "LinearBNReLU"]
+    }
 
     masks = {}
 
@@ -89,6 +94,7 @@ def iterative_magnitude_pruning(
 
     accs = []
     test_losses = []
+    layerwise_history = {}
 
     for target_ratio in rho:
         while P > P0 * target_ratio:
@@ -203,6 +209,7 @@ def iterative_magnitude_pruning(
 
         accs.append(acc)
         test_losses.append(test_loss)
+        layerwise_history[f"{target_ratio:.2f}"] = get_unstructured_layerwise_retention(model, masks)
 
         print(
             f"Target params ratio: {target_ratio:.2f}, "
@@ -212,4 +219,19 @@ def iterative_magnitude_pruning(
 
     print(f"Nonzero params after pruning: {P0} -> {P}, ratio = {P / P0:.4f}")
 
-    return model, accs, test_losses
+    return model, accs, test_losses, layerwise_history
+
+
+
+def get_unstructured_layerwise_retention(model, masks):
+    """
+    For unstructured magnitude pruning:
+    return per-layer nonzero weight ratio.
+    """
+    retention = {}
+
+    for idx, mask in masks.items():
+        W = get_prunable_weight(model.model[idx]).data
+        retention[idx] = torch.count_nonzero(W).item() / W.numel()
+
+    return retention
