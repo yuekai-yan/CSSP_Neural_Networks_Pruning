@@ -13,7 +13,23 @@ import matplotlib.pyplot as plt
 
 from Pruning.pruning_CSSP import *
 
-def filter_pruning_l1(params, l, keep_rank):
+
+def compute_filter_scores(W, layer_type, norm):
+    if layer_type in ["Conv2d", "ConvBNReLU"]:
+        # W: [out_channels, in_channels, k, k]
+        W_flat = W.reshape(W.shape[0], -1)
+    elif layer_type in ["Linear", "LinearBNReLU"]:
+        # W: [out_features, in_features]
+        W_flat = W
+
+    if norm == "l1":
+        return W_flat.abs().sum(dim=1)
+    elif norm == "l2":
+        return torch.sqrt((W_flat ** 2).sum(dim=1))
+    
+
+
+def pruning_filter(params, l, keep_rank, norm):
     """
     L1-norm based filter pruning.
     Prune output channels / neurons of params[l],
@@ -22,16 +38,10 @@ def filter_pruning_l1(params, l, keep_rank):
     layer = params[l]
     W = layer["weight"]
 
-    if layer["layer_type"] in ["Conv2d", "ConvBNReLU"]:
-        # W: [out_channels, in_channels, k, k]
-        scores = W.abs().reshape(W.shape[0], -1).sum(dim=1)
-
-    elif layer["layer_type"] in ["Linear", "LinearBNReLU"]:
-        # W: [out_features, in_features]
-        scores = W.abs().sum(dim=1)
-
-    else:
+    if layer["layer_type"] not in ["Conv2d", "ConvBNReLU", "Linear", "LinearBNReLU"]:
         return params
+
+    scores = compute_filter_scores(W, layer["layer_type"], norm)
 
     keep_idx = torch.argsort(scores, descending=True)[:keep_rank]
     keep_idx, _ = torch.sort(keep_idx)
@@ -99,12 +109,17 @@ def filter_pruning_l1(params, l, keep_rank):
 
     return params
 
-def iterative_filter_pruning(
+
+
+
+
+def iterative_pruning_filter(
     model0,
     X,
     input_shape,
     rho,
     step_size,
+    norm,
     test_loader,
     train_loader=None,
     S=None,
@@ -113,7 +128,7 @@ def iterative_filter_pruning(
     bn_batches=20,
 ):
     """
-    Iterative L1 filter pruning.
+    Iterative L1/L2 filter pruning.
 
     Inputs:
         model0:      original model
@@ -121,6 +136,7 @@ def iterative_filter_pruning(
         input_shape: input image shape, e.g. (3, 32, 32)
         rho:         target FLOPs ratio
         step_size:   per-layer keep ratio, e.g. 0.9
+        norm:        "l1" or "l2", filter importance metric
         S:           layer indices not to prune
         crit:        str, "flops" or "params", criterion for stopping pruning
 
@@ -155,8 +171,10 @@ def iterative_filter_pruning(
     accs = []
     test_losses = []
     layerwise_history = {}
+    pruned_models = {}
 
     for j in rho:
+        print(f"-------Begin pruning-------\nNorm: {norm}\tTarget ratio: {j:.2f}")
         while F > F0 * j:
             infos = []
             input_shape = input_shape_origin
@@ -202,11 +220,8 @@ def iterative_filter_pruning(
                     input_shape = forward_matrix.shape[1:]
                     continue
 
-                # L1 filter importance
-                if layer["layer_type"] in ["Conv2d", "ConvBNReLU"]:
-                    filter_scores = W.abs().reshape(W.shape[0], -1).sum(dim=1)
-                else:
-                    filter_scores = W.abs().sum(dim=1)
+                # compute filter scores
+                filter_scores = compute_filter_scores(W, layer["layer_type"], norm=norm)
 
                 sorted_scores, _ = torch.sort(filter_scores, descending=False)
 
@@ -259,7 +274,7 @@ def iterative_filter_pruning(
                 f"score: {best['score']:.6e}"
             )
 
-            params = filter_pruning_l1(params, l, keep_rank)
+            params = pruning_filter(params, l, keep_rank, norm)
 
             model = load_pruned_model(model, params)
             model.to(device)
@@ -281,7 +296,8 @@ def iterative_filter_pruning(
         accs.append(acc)
         test_losses.append(test_loss)
         layerwise_history[f"{j:.2f}"] = get_layerwise_retention(params, original_widths)
+        pruned_models[f"{j:.2f}"] = copy.deepcopy(model).cpu()
 
-    print(f"Flops after pruning: {F0} -> {F}, ratio = {F / F0:.4f}")
+    print(f"Flops after pruning: {F0} -> {F}")
 
-    return model, accs, test_losses, layerwise_history
+    return model, accs, test_losses, layerwise_history, pruned_models

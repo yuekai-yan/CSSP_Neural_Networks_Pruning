@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from Pruning.pruning_CSSP import *
 
 # For pruning curve
 def plot_pruning_curve(base_acc, ratios, accs, labels, crit, ylabel, title=None):
@@ -60,6 +61,8 @@ def plot_layerwise_retention_heatmap(heatmap_data, title=None):
         for layer in heatmap_data[method].keys()
     })
 
+    layers = layers[:-1]
+
     data = np.array([
         [heatmap_data[method].get(layer, np.nan) for layer in layers]
         for method in methods
@@ -84,32 +87,6 @@ def plot_layerwise_retention_heatmap(heatmap_data, title=None):
 
 
 # For singular value spectrum
-def plot_singular_value_spectrum(s, normalize=True, log_scale=True, title=None):
-    if normalize:
-        s_plot = s / s[0]
-        ylabel = "Normalized Singular Value"
-    else:
-        s_plot = s
-        ylabel = "Singular Value"
-
-    plt.figure(figsize=(7, 5))
-    plt.plot(np.arange(1, len(s_plot) + 1), s_plot, marker="o", markersize=3, linewidth=0.8)
-
-    if log_scale:
-        plt.yscale("log")
-
-    #plt.xlabel("Index")
-    plt.ylabel(ylabel)
-
-    if title is not None:
-        plt.title(title)
-
-    #plt.grid(alpha=0.3)
-    plt.tight_layout()
-    plt.show()
-
-
-
 def plot_singular_value_spectrum(
     s,
     A=None,
@@ -166,7 +143,8 @@ def plot_singular_value_spectrum(
         "StrongRRQR": "C0",
         "RPCholesky": "C1",
         "ARP": "C2",
-        "pruning_filter": "C3",
+        "pruning_filter_l1": "C3",
+        "pruning_filter_l2": "C4",
     }  
 
     if log_scale:
@@ -235,6 +213,86 @@ def plot_singular_value_spectrum(
 
     plt.tight_layout()
     plt.show()
+
+
+
+def plot_singular_values(pruned_models_dict, model_baseline, params_base, X, l, rho_key,
+                                     methods=None, device=None, log_scale=True,
+                                     normalize=True, title=None):
+    """
+    rho_key: the key to index pruned_models_dict[method], e.g., "0.95" or "0.90"
+    pruned_models_dict[method][rho_key] = pruned_model
+    layer_l: index in params, not global layer index
+    """
+
+    if device is None:
+        try:
+            device = next(model_baseline.parameters()).device
+        except StopIteration:
+            device = torch.device("cpu")
+
+    X = X.to(device)
+    plt.figure(figsize=(8, 5), dpi=200)
+
+    singular_values_dict = {}
+
+    # baseline
+    model_baseline = model_baseline.to(device).eval()
+    A_base = get_layer_activation_matrix(model_baseline, X, params_base, l)
+    print(A_base.shape)
+    s_base = compute_singular_values(A_base)
+    if normalize: 
+        s_base = s_base / (s_base[0] + 1e-12)
+
+    singular_values_dict["baseline"] = s_base
+    plt.plot(np.arange(1, len(s_base) + 1), s_base, linewidth=1.2,
+             linestyle="--", label="baseline")
+
+    # pruned models
+    for method in methods:
+        if method not in pruned_models_dict:
+            print(f"[Skip] method {method} not found.")
+            continue
+
+        pruned_models = pruned_models_dict[method]
+
+        if rho_key not in pruned_models:
+            print(f"[Skip] rho_key {rho_key} not found for method {method}. "
+                  f"Available keys: {list(pruned_models.keys())}")
+            continue
+
+        model = pruned_models[rho_key].to(device).eval()
+        params = extract_params(model.model)
+        A = get_layer_activation_matrix(model, X, params, l)
+        s = compute_singular_values(A)
+        if normalize: s = s / (s[0] + 1e-12)
+
+        singular_values_dict[method] = s
+        plt.plot(np.arange(1, len(s) + 1), s, marker="o",
+                 markersize=0.8, linewidth=0.6, label=method)
+
+    if log_scale: plt.yscale("log")
+
+    plt.xlabel("Singular value index")
+    plt.ylabel(r"Relative Singular Value ($\sigma_i / \sigma_1$)") if normalize else plt.ylabel("Singular Value")
+    plt.title(title or f"Singular Value Spectrum at Layer {params_base[l]['layer_idx']}, Ratio = {rho_key}")
+    #plt.grid(True, alpha=0.3)
+    plt.legend(fontsize=7)
+    plt.tight_layout()
+    plt.show()
+
+    return singular_values_dict
+
+
+
+
+
+
+
+
+
+
+
 
 
 # overall relative Frobrnius error trajectory
@@ -317,3 +375,5 @@ def plot_structured_vs_magnitude_heatmaps(layerwise_results, ratio_key, structur
     cbar_ax = fig.add_axes([0.90, 0.25, 0.015, 0.5]) 
     fig.colorbar(im, cax=cbar_ax)
     plt.show()
+
+

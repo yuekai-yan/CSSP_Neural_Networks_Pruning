@@ -222,7 +222,7 @@ def iterative_magnitude_pruning(
     return model, accs, test_losses, layerwise_history
 
 
-
+# record per-layer nonzero weight ratio
 def get_unstructured_layerwise_retention(model, masks):
     """
     For unstructured magnitude pruning:

@@ -1,4 +1,4 @@
-# Column subset selection methods in NLA with application to neural networks pruning
+# Spring 2026 Semester Project - Column subset selection methods in NLA with application to neural networks pruning
 
 ## Overview
 

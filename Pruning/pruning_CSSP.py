@@ -572,7 +572,7 @@ def iterative_pruning(model0, X, input_shape, rho, step_size, method, crit, test
 
     # layers not to prune, e.g., output layer
     if S is None:
-        S = {len(model0.model) - 1}
+        S = {len(model0.model) - 1}  
 
     # extract weights
     params = extract_params(model0.model)
@@ -597,6 +597,7 @@ def iterative_pruning(model0, X, input_shape, rho, step_size, method, crit, test
     accs = []
     test_losses = []
     layerwise_history = {}
+    pruned_models = {}
 
     for j in rho:
         print(f"-------Begin pruning-------\nMethod: {method}\tTarget ratio: {j:.2f}")
@@ -679,6 +680,7 @@ def iterative_pruning(model0, X, input_shape, rho, step_size, method, crit, test
         accs.append(acc)
         test_losses.append(test_loss)
         layerwise_history[f"{j:.2f}"] = get_layerwise_retention(params, original_widths)
+        pruned_models[f"{j:.2f}"] = copy.deepcopy(model).cpu()
         print(
         f"Current ratio: {F / F0:.4f}, "
         f"Accuracy: {acc:.4f}, "
@@ -690,7 +692,7 @@ def iterative_pruning(model0, X, input_shape, rho, step_size, method, crit, test
     elif crit == "params":
         print(f"Params after pruning: {F0} -> {F}")
 
-    return model, accs, test_losses, layerwise_history
+    return model, accs, test_losses, layerwise_history, pruned_models
 
 
 
@@ -941,6 +943,7 @@ def evaluate_pruned_model(pruned_model, test_data, device=None):
 
 
 
+
 # Singular Value Spectrum analysis for a specific layer
 def get_layer_activation_matrix(model, X, params, l):
     """
@@ -949,7 +952,12 @@ def get_layer_activation_matrix(model, X, params, l):
         A: shape (num_samples, num_features)
     """
     layer_type = params[l]["layer_type"]
-    next_layer_idx = params[l + 1]["layer_idx"]
+    #next_layer_idx = params[l + 1]["layer_idx"]
+
+    if l + 1 < len(params):
+        next_layer_idx = params[l + 1]["layer_idx"]
+    else:
+        next_layer_idx = params[l]["layer_idx"]
 
     with torch.no_grad():
         Z = forward_to_layer(model.model, X, next_layer_idx)
