@@ -957,7 +957,7 @@ def get_layer_activation_matrix(model, X, params, l):
     if l + 1 < len(params):
         next_layer_idx = params[l + 1]["layer_idx"]
     else:
-        next_layer_idx = params[l]["layer_idx"]
+        next_layer_idx = params[l]["layer_idx"] + 1
 
     with torch.no_grad():
         Z = forward_to_layer(model.model, X, next_layer_idx)

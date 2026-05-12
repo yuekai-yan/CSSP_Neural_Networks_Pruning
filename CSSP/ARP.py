@@ -12,7 +12,7 @@ def sketch(A, k):
     """
     m = A.shape[0]
     Theta = np.random.randn(m, k) / np.sqrt(m)
-    V, _ = qr(A.T @ Theta, mode='economic')
+    V, _ = qr(A.T @ Theta, mode='economic')    # V @ R = A.T @ Theta
     return V
 
 

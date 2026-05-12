@@ -289,6 +289,58 @@ def plot_singular_values(pruned_models_dict, model_baseline, params_base, X, l, 
 
 
 
+# Plot per-sample argmax index consistency for the last activation matrix
+def argmax_consistency(A_base, A_pruned):
+    A_base = A_base.detach().cpu()
+    A_pruned = A_pruned.detach().cpu()
+
+    pred_base = A_base.argmax(dim=1)
+    pred_pruned = A_pruned.argmax(dim=1)
+
+    return (pred_base == pred_pruned).float().mean().item()
+
+
+def plot_argmax_consistency(
+    activation_matrices,
+    baseline_key="baseline",
+    methods=None,
+    title=None,
+):
+    """
+    activation_matrices[method] = activation matrix
+    """
+
+    if methods is None:
+        methods = [m for m in activation_matrices.keys() if m != baseline_key]
+
+    A_base = activation_matrices[baseline_key]
+
+    results = {}
+
+    for method in methods:
+        if method not in activation_matrices:
+            print(f"[Skip] {method} not found.")
+            results[method] = np.nan
+            continue
+
+        results[method] = argmax_consistency(A_base, activation_matrices[method])
+
+    plt.figure(figsize=(6, 3), dpi=200)
+    plt.bar(list(results.keys()), list(results.values()))
+
+    plt.ylabel("Argmax consistency")
+    plt.ylim(0, 1.02)
+    plt.title(title or "Final-layer Argmax Consistency")
+    plt.xticks(rotation=30, ha="right")
+    plt.tight_layout()
+    plt.show()
+
+    return results
+
+
+
+
+
 
 
 
