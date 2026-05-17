@@ -10,9 +10,9 @@ def plot_pruning_curve(base_acc, ratios, accs, labels, crit, ylabel,
     two_plots = base_loss is not None and losses is not None
 
     if two_plots:
-        fig, axes = plt.subplots(1, 2, figsize=(7.2, 2.8), dpi=300)
+        fig, axes = plt.subplots(1, 2, figsize=(7.2, 2.8), dpi=400)
     else:
-        fig, axes = plt.subplots(1, 1, figsize=(4.8, 3.0), dpi=300)
+        fig, axes = plt.subplots(1, 1, figsize=(4.8, 3.0), dpi=400)
         axes = [axes]
 
     def draw_one(ax, base, ys, ylab, ttl):
@@ -89,7 +89,7 @@ def plot_pruning_curve(base_acc, ratios, accs, labels, crit, ylabel,
 
         fig.tight_layout(rect=[0, 0, 1, 0.90])
         plt.savefig("pruning_curve_acc_loss.pdf", bbox_inches="tight")
-        plt.savefig("pruning_curve_acc_loss.png", dpi=300, bbox_inches="tight")
+        plt.savefig("pruning_curve_acc_loss.png", dpi=400, bbox_inches="tight")
 
     else:
         axes[0].legend(
@@ -104,7 +104,7 @@ def plot_pruning_curve(base_acc, ratios, accs, labels, crit, ylabel,
 
         fig.tight_layout()
         plt.savefig("pruning_curve.pdf", bbox_inches="tight")
-        plt.savefig("pruning_curve.png", dpi=300, bbox_inches="tight")
+        plt.savefig("pruning_curve.png", dpi=400, bbox_inches="tight")
 
     plt.show()
 
@@ -201,7 +201,7 @@ def plot_singular_values(
     X = X.to(device)
     model_baseline = model_baseline.to(device).eval()
 
-    fig, axes = plt.subplots(2, 4, figsize=(12.8, 4.8), dpi=300)
+    fig, axes = plt.subplots(2, 4, figsize=(12.8, 4.8), dpi=400)
     axes = axes.ravel()
 
 
