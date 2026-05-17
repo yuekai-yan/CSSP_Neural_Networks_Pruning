@@ -4,55 +4,113 @@ import torch
 from Pruning.pruning_CSSP import *
 
 # For pruning curve
-def plot_pruning_curve(base_acc, ratios, accs, labels, crit, ylabel, title=None):
-    plt.figure(figsize=(5.5, 3), dpi=150)
+def plot_pruning_curve(base_acc, ratios, accs, labels, crit, ylabel,
+                       title=None,
+                       base_loss=None, losses=None):
+    two_plots = base_loss is not None and losses is not None
 
-    for i in range(len(accs)):
-        linestyle = "--" if labels[i] == "pruning_filter" else "-"
+    if two_plots:
+        fig, axes = plt.subplots(1, 2, figsize=(7.2, 2.8), dpi=300)
+    else:
+        fig, axes = plt.subplots(1, 1, figsize=(4.8, 3.0), dpi=300)
+        axes = [axes]
 
-        plt.plot(
-            ratios,
-            accs[i],
-            marker="o",
-            markersize=4,
-            linewidth=1.5,
-            linestyle=linestyle,
-            label=labels[i],
+    def draw_one(ax, base, ys, ylab, ttl):
+        for y, label in zip(ys, labels):
+            ax.plot(
+                ratios, y,
+                marker="o",
+                markersize=3.0,
+                linewidth=1.25,
+                label=label,
+                alpha=0.95,
+            )
+
+        ax.axhline(
+            base,
+            linestyle=(0, (4, 2)),
+            linewidth=1.4,
+            color="0.25",
+            label="Baseline",
+            zorder=0,
         )
 
-    plt.axhline(
-        base_acc,
-        linestyle="--",
-        linewidth=1.5,
-        label="Baseline",
-    )
+        ax.annotate(
+            f"{base:.2f}",
+            xy=(0, base),
+            xycoords=ax.get_yaxis_transform(),
+            xytext=(-3, 0),
+            textcoords="offset points",
+            ha="right",
+            va="center",
+            fontsize=7.5,          
+            color="black",       
+        )   
 
-    if crit == "flops":
-        plt.xlabel("Fraction of FLOPs Remaining", fontsize=8, labelpad=2)
-    elif crit == "params":
-        plt.xlabel("Fraction of Parameters Remaining", fontsize=8, labelpad=2)
-    plt.ylabel(ylabel, fontsize=8, labelpad=2)
+        xlabel = {
+            "flops": "Fraction of FLOPs Remaining",
+            "params": "Fraction of Parameters Remaining",
+        }.get(crit, crit)
 
-    plt.title(title, fontsize=15, fontweight="bold", pad=12)
-    plt.xticks(fontsize=8)
-    plt.yticks(fontsize=8)
-    #plt.grid(True, linestyle="--", alpha=0.35)
-    plt.legend(fontsize=8, frameon=True, fancybox=True, shadow=True)
+        ax.set_xlabel(xlabel, fontsize=8.5)
+        ax.set_ylabel(ylab, fontsize=8.5)
 
-    plt.tight_layout(pad=0.2)
-    plt.subplots_adjust(left=0.12, bottom=0.13)
+        if ttl is not None:
+            ax.set_title(ttl, fontsize=9.5, pad=5)
+
+        ax.tick_params(axis="both", labelsize=7.5, width=0.7, length=3)
+        ax.grid(True, linestyle="--", linewidth=0.35, alpha=0.28)
+
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.spines["left"].set_linewidth(0.7)
+        ax.spines["bottom"].set_linewidth(0.7)
+
+        ax.margins(x=0.02, y=0.06)
+
+    draw_one(axes[0], base_acc, accs, ylabel, title)
+
+    if two_plots:
+        draw_one(axes[1], base_loss, losses, "Test Loss", None)
+
+        handles, legend_labels = axes[0].get_legend_handles_labels()
+
+        fig.legend(
+            handles,
+            legend_labels,
+            loc="upper center",
+            bbox_to_anchor=(0.5, 1.04),
+            ncol=3,
+            fontsize=7.5,
+            frameon=False,
+            handlelength=1.8,
+            columnspacing=1.2,
+        )
+
+        fig.tight_layout(rect=[0, 0, 1, 0.90])
+        plt.savefig("pruning_curve_acc_loss.pdf", bbox_inches="tight")
+        plt.savefig("pruning_curve_acc_loss.png", dpi=300, bbox_inches="tight")
+
+    else:
+        axes[0].legend(
+            fontsize=7,
+            frameon=False,
+            loc="lower center",
+            bbox_to_anchor=(0.5, 1.02),
+            ncol=3,
+            handlelength=1.8,
+            columnspacing=1.0,
+        )
+
+        fig.tight_layout()
+        plt.savefig("pruning_curve.pdf", bbox_inches="tight")
+        plt.savefig("pruning_curve.png", dpi=300, bbox_inches="tight")
+
     plt.show()
 
 
 # For layerwise retention heatmap
 def plot_layerwise_retention_heatmap(heatmap_data, title=None):
-
-    plt.rcParams["font.size"] = 8
-    plt.rcParams["axes.titlesize"] = 10
-    plt.rcParams["axes.labelsize"] = 8
-    plt.rcParams["xtick.labelsize"] = 8
-    plt.rcParams["ytick.labelsize"] = 8
-
     methods = list(heatmap_data.keys())
 
     layers = sorted({
@@ -60,7 +118,6 @@ def plot_layerwise_retention_heatmap(heatmap_data, title=None):
         for method in methods
         for layer in heatmap_data[method].keys()
     })
-
     layers = layers[:-1]
 
     data = np.array([
@@ -68,163 +125,73 @@ def plot_layerwise_retention_heatmap(heatmap_data, title=None):
         for method in methods
     ])
 
-    plt.figure(figsize=(10, 4), dpi=200)
-    im = plt.imshow(data, aspect="auto", vmin=0, vmax=1, cmap="viridis")
+    fig, ax = plt.subplots(figsize=(8.0, 2.6), dpi=400)
 
-    plt.colorbar(im)
-    plt.xticks(np.arange(len(layers)), layers)
-    plt.yticks(np.arange(len(methods)), methods, fontweight="bold")
-    #plt.yticks(np.arange(len(methods)), methods, rotation=30, ha="right")
-
-    plt.xlabel("Layer Index")
-    #plt.ylabel("Method")
-
-    if title is not None:
-        plt.title(title)
-
-    plt.tight_layout()
-    plt.show()
-
-
-# For singular value spectrum
-def plot_singular_value_spectrum(
-    s,
-    A=None,
-    normalize=True,
-    log_scale=True,
-    title=None,
-    heatmap_data=None,
-    methods=None,
-    layer_idx=None,
-):
-    plt.rcParams["font.family"] = "Arial"      
-    plt.rcParams["font.size"] = 8
-    plt.rcParams["axes.titlesize"] = 10
-    plt.rcParams["axes.titleweight"] = "bold"
-    plt.rcParams["axes.labelsize"] = 8
-    plt.rcParams["axes.labelweight"] = "bold"
-    plt.rcParams["xtick.labelsize"] = 8
-    plt.rcParams["ytick.labelsize"] = 8
-    if normalize:
-        s_plot = s / s[0]
-        ylabel = r"Relative Singular Value ($\sigma_i / \sigma_1$)"
-    else:
-        s_plot = s
-        ylabel = "Singular Value"
-
-    if torch.is_tensor(s_plot):
-        s_plot = s_plot.detach().cpu().numpy()
-    else:
-        s_plot = np.asarray(s_plot)
-
-    x = np.arange(1, len(s_plot) + 1)
-
-    plt.figure(figsize=(7, 4.5), dpi=200)
-
-    plt.plot(
-        x,
-        s_plot,
-        #color="black",
-        marker="o",
-        markersize=2,
-        linewidth=0.5,
-        label="Spectrum",
+    im = ax.imshow(
+        data,
+        aspect="auto",
+        vmin=0,
+        vmax=1,
+        cmap="YlGnBu_r",          
+        interpolation="nearest",
     )
 
-    if log_scale:
-        plt.yscale("log")
+    for i in range(len(methods)):
+        for j in range(len(layers)):
+            val = data[i, j]
+            if not np.isnan(val):
+                ax.text(
+                    j, i,
+                    f"{val:.2f}",
+                    ha="center",
+                    va="center",
+                    fontsize=5.8,
+                    color="black",
+                    fontweight="normal",
+                )
 
-    plt.ylabel(ylabel)
+    ax.set_xticks(np.arange(len(layers)))
+    ax.set_xticklabels(layers, fontsize=7)
 
-    if title is not None:
-        plt.title(title)
+    ax.set_yticks(np.arange(len(methods)))
+    ax.set_yticklabels(methods, fontsize=7.5)
 
-    method_colors = {
-        "StrongRRQR": "C0",
-        "RPCholesky": "C1",
-        "ARP": "C2",
-        "pruning_filter_l1": "C3",
-        "pruning_filter_l2": "C4",
-    }  
+    ax.set_xlabel("Layer Index", fontsize=8)
 
-    if log_scale:
-        y_min, y_max = np.min(s_plot[s_plot > 0]), np.max(s_plot)
-        y_text_global = 10 ** (np.log10(y_min) * 0.15 + np.log10(y_max) * 0.85)
-    else:
-        y_min, y_max = np.min(s_plot), np.max(s_plot)
-        y_text_global = y_min + 0.85 * (y_max - y_min)
+    if title:
+        ax.set_title(title, fontsize=9.5, pad=6)
 
-    if heatmap_data is not None and methods is not None:
-        n_cols = A.shape[1] if A is not None else len(s_plot)
+    ax.tick_params(axis="both", width=0.6, length=2.5)
 
-        for method in methods:
-            value = heatmap_data[method]
+    for spine in ax.spines.values():
+        spine.set_linewidth(0.6)
 
-            # value can be either:
-            # 1. a float ratio
-            # 2. a dict: {layer_idx: ratio}
-            if isinstance(value, dict):
-                if layer_idx is None:
-                    raise ValueError("layer_idx must be provided when heatmap_data[method] is a dict.")
+    cbar = fig.colorbar(
+        im,
+        ax=ax,
+        fraction=0.022,
+        pad=0.018,
+    )
+    cbar.ax.tick_params(labelsize=7, width=0.6, length=2.5)
+    cbar.outline.set_linewidth(0.6)
 
-                ratio = value[layer_idx]
-            else:
-                ratio = value
-
-            x_pos = int(ratio * n_cols)
-            x_pos = max(1, min(x_pos, len(s_plot)))
-            y_pos = s_plot[x_pos - 1]
-
-            color = method_colors.get(method, None)
-
-            plt.axvline(
-                x=x_pos,
-                color=color,
-                linestyle="--",
-                linewidth=1.0,
-                alpha=0.7,
-            )
-            y_text = y_text_global
-
-            plt.text(
-                x_pos,
-                y_text,
-                method,
-                color=color,
-                fontsize=8,
-                fontweight="bold",
-                rotation=90,
-                verticalalignment="center",
-                horizontalalignment="right",
-                bbox=dict(facecolor="white", alpha=0.7, edgecolor="none", pad=1.5),
-            )
-            plt.scatter(x_pos, y_pos, color=color, s=18, zorder=5)
-            plt.text(
-                x_pos + 0.5,
-                y_pos * 1.15,
-                f"{y_pos:.2e}",
-                color=color, 
-                fontsize=7,
-                fontweight="bold",
-                verticalalignment="bottom",
-                horizontalalignment="left",
-                bbox=dict(facecolor="white", alpha=0.7, edgecolor="none", pad=1.0),
-            )
-
-    plt.tight_layout()
+    fig.tight_layout()
     plt.show()
 
-
-
-def plot_singular_values(pruned_models_dict, model_baseline, params_base, X, l, rho_key,
-                                     methods=None, device=None, log_scale=True,
-                                     normalize=True, title=None):
-    """
-    rho_key: the key to index pruned_models_dict[method], e.g., "0.95" or "0.90"
-    pruned_models_dict[method][rho_key] = pruned_model
-    layer_l: index in params, not global layer index
-    """
-
+# For singular value
+def plot_singular_values(
+    pruned_models_dict,
+    model_baseline,
+    params_base,
+    X,
+    layer_ls,
+    rho_key,
+    methods,
+    device=None,
+    log_scale=True,
+    normalize=True,
+    title=None,
+):
     if device is None:
         try:
             device = next(model_baseline.parameters()).device
@@ -232,200 +199,114 @@ def plot_singular_values(pruned_models_dict, model_baseline, params_base, X, l, 
             device = torch.device("cpu")
 
     X = X.to(device)
-    plt.figure(figsize=(8, 5), dpi=200)
+    model_baseline = model_baseline.to(device).eval()
+
+    fig, axes = plt.subplots(2, 4, figsize=(12.8, 4.8), dpi=300)
+    axes = axes.ravel()
+
 
     singular_values_dict = {}
 
-    # baseline
-    model_baseline = model_baseline.to(device).eval()
-    A_base = get_layer_activation_matrix(model_baseline, X, params_base, l)
-    print(A_base.shape)
-    s_base = compute_singular_values(A_base)
-    if normalize: 
-        s_base = s_base / (s_base[0] + 1e-12)
+    for i, (ax, l) in enumerate(zip(axes, layer_ls)):
+        singular_values_dict[l] = {}
 
-    singular_values_dict["baseline"] = s_base
-    plt.plot(np.arange(1, len(s_base) + 1), s_base, linewidth=1.2,
-             linestyle="--", label="baseline")
+        # baseline
+        A_base = get_layer_activation_matrix(model_baseline, X, params_base, l)
+        s_base = compute_singular_values(A_base)
 
-    # pruned models
-    for method in methods:
-        if method not in pruned_models_dict:
-            print(f"[Skip] method {method} not found.")
-            continue
+        if normalize:
+            s_base = s_base / (s_base[0] + 1e-12)
 
-        pruned_models = pruned_models_dict[method]
+        singular_values_dict[l]["Baseline"] = s_base
 
-        if rho_key not in pruned_models:
-            print(f"[Skip] rho_key {rho_key} not found for method {method}. "
-                  f"Available keys: {list(pruned_models.keys())}")
-            continue
+        for method in methods:
+            if method not in pruned_models_dict:
+                print(f"[Skip] method {method} not found.")
+                continue
 
-        model = pruned_models[rho_key].to(device).eval()
-        params = extract_params(model.model)
-        A = get_layer_activation_matrix(model, X, params, l)
-        s = compute_singular_values(A)
-        if normalize: s = s / (s[0] + 1e-12)
+            if rho_key not in pruned_models_dict[method]:
+                print(f"[Skip] rho_key {rho_key} not found for method {method}.")
+                continue
 
-        singular_values_dict[method] = s
-        plt.plot(np.arange(1, len(s) + 1), s, marker="o",
-                 markersize=0.8, linewidth=0.6, label=method)
+            model = pruned_models_dict[method][rho_key].to(device).eval()
+            params = extract_params(model.model)
 
-    if log_scale: plt.yscale("log")
+            A = get_layer_activation_matrix(model, X, params, l)
+            s = compute_singular_values(A)
 
-    plt.xlabel("Singular value index")
-    plt.ylabel(r"Relative Singular Value ($\sigma_i / \sigma_1$)") if normalize else plt.ylabel("Singular Value")
-    plt.title(title or f"Singular Value Spectrum at Layer {params_base[l]['layer_idx']}, Ratio = {rho_key}")
-    #plt.grid(True, alpha=0.3)
-    plt.legend(fontsize=7)
-    plt.tight_layout()
-    plt.show()
+            if normalize:
+                s = s / (s[0] + 1e-12)
 
-    return singular_values_dict
+            singular_values_dict[l][method] = s
 
+            ax.plot(
+                np.arange(1, len(s) + 1),
+                s,
+                marker="o",
+                markersize=1.0,
+                linewidth=0.8,
+                label=method,
+                alpha=0.95,
+            )
 
+        ax.plot(
+            np.arange(1, len(s_base) + 1),
+            s_base,
+            linewidth=1.2,
+            linestyle=(0, (4, 2)),
+            color="0.25",
+            label="Baseline",
+            zorder=0,
+        )
 
+        if log_scale:
+            ax.set_yscale("log")
 
+        if i >= 4:
+            ax.set_xlabel("Singular value index", fontsize=8.5)
+        else:
+            ax.set_xlabel("")
 
+        if ax in axes[::4]:
+            ax.set_ylabel(
+                r"$\sigma_i / \sigma_1$" if normalize else "Singular Value",
+                fontsize=8.5,
+            )
+        else:
+            ax.set_ylabel("")
 
+        ax.set_title(
+            f"Layer {params_base[l]['layer_idx']}",
+            fontsize=9.5,
+            pad=5,
+        )
 
-# Plot per-sample argmax index consistency for the last activation matrix
-def argmax_consistency(A_base, A_pruned):
-    A_base = A_base.detach().cpu()
-    A_pruned = A_pruned.detach().cpu()
+        ax.tick_params(axis="both", labelsize=7.5, width=0.7, length=3)
+        ax.grid(True, linestyle="--", linewidth=0.35, alpha=0.28)
 
-    pred_base = A_base.argmax(dim=1)
-    pred_pruned = A_pruned.argmax(dim=1)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.spines["left"].set_linewidth(0.7)
+        ax.spines["bottom"].set_linewidth(0.7)
 
-    return (pred_base == pred_pruned).float().mean().item()
+    handles, legend_labels = axes[0].get_legend_handles_labels()
 
-
-def plot_argmax_consistency(
-    activation_matrices,
-    baseline_key="baseline",
-    methods=None,
-    title=None,
-):
-    """
-    activation_matrices[method] = activation matrix
-    """
-
-    if methods is None:
-        methods = [m for m in activation_matrices.keys() if m != baseline_key]
-
-    A_base = activation_matrices[baseline_key]
-
-    results = {}
-
-    for method in methods:
-        if method not in activation_matrices:
-            print(f"[Skip] {method} not found.")
-            results[method] = np.nan
-            continue
-
-        results[method] = argmax_consistency(A_base, activation_matrices[method])
-
-    plt.figure(figsize=(6, 3), dpi=200)
-    plt.bar(list(results.keys()), list(results.values()))
-
-    plt.ylabel("Argmax consistency")
-    plt.ylim(0, 1.02)
-    plt.title(title or "Final-layer Argmax Consistency")
-    plt.xticks(rotation=30, ha="right")
-    plt.tight_layout()
-    plt.show()
-
-    return results
-
-
-
-
-
-
-
-
-
-
-
-# overall relative Frobrnius error trajectory
-def plot_Frobenius_error_trajectory(recon_results):
-    plt.figure(figsize=(7, 5))
-
-    for method, hist in recon_results.items():
-        y = [item["reconstruction_error"] for item in hist]
-        x = list(range(1, len(y) + 1))
-
-        plt.plot(x, y, marker="o", label=method)
-
-    plt.xlabel("Pruning Step")
-    plt.ylabel(r"Relative Frobenius Error $\frac{\|A-A(:, J)A(:, J)^{\dagger}A\|_F}{\|A\|_F}$")
-    plt.title("Reconstruction Error Along Iterative Pruning")
-    plt.legend()
-    plt.grid(alpha=0.3)
-    plt.tight_layout()
-    plt.show()
-
-
-
-def plot_fixed_layer_relerr(relerr_results, keep_ratios, layer_idx, svd_bound=None, title=None):
-    plt.figure(figsize=(5, 3), dpi=150)
-
-    for method, errors in relerr_results.items():
-        plt.plot(keep_ratios, errors, marker="o", linewidth=0.8, markersize=3, label=method)
-
-    if svd_bound is not None:
-        plt.plot(keep_ratios, svd_bound, linestyle="--", marker="s", linewidth=0.8, markersize=3, color="C0", label="SVD lower bound")
-
-    plt.xlabel("Remaining Columns Ratio", fontsize=8)
-
-    plt.ylabel(
-        r"Relative Frobenius Error $\frac{\|A-A(:, J)A(:, J)^{\dagger}A\|_F}{\|A\|_F}$",
-        fontsize=8,
-        labelpad=9
+    fig.legend(
+        handles,
+        legend_labels,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 1.03),
+        ncol=3,
+        fontsize=7.5,
+        frameon=False,
+        handlelength=1.8,
+        columnspacing=1.2,
     )
 
-    plt.title(title, fontsize=10)
-    plt.legend(fontsize=7)
+    if title:
+        fig.suptitle(title, fontsize=10, y=1.08)
 
-    plt.tight_layout()
-    plt.show()
-
-
-
-
-def plot_structured_vs_magnitude_heatmaps(layerwise_results, ratio_key, structured_methods=("StrongRRQR", "RPCholesky", "ARP"), magnitude_method="magnitude_pruning"):
-    plt.rcParams["font.size"] = 8
-    plt.rcParams["axes.titlesize"] = 10
-    plt.rcParams["axes.labelsize"] = 8
-    plt.rcParams["xtick.labelsize"] = 8
-    plt.rcParams["ytick.labelsize"] = 8
-
-    structured_data = {m: layerwise_results[m][ratio_key] for m in structured_methods}
-    magnitude_data = {magnitude_method: layerwise_results[magnitude_method][ratio_key]}
-
-    structured_layers = set().union(*[set(d.keys()) for d in structured_data.values()])
-    magnitude_layers = set(magnitude_data[magnitude_method].keys())
-    common_layers = sorted(structured_layers & magnitude_layers)
-    
-    fig, axes = plt.subplots(2, 1, figsize=(10, 4), dpi=200, gridspec_kw={"height_ratios": [3, 1]})
-
-    for ax, heatmap_data, title in zip(axes, [structured_data, magnitude_data], [f"CSSP: channel / neuron retention at params ratio = {ratio_key}", f"Magnitude pruning: nonzero-weight retention at params ratio = {ratio_key}"]):
-        methods = list(heatmap_data.keys())
-        layers = common_layers
-        data = np.array([[heatmap_data[method].get(layer, np.nan) for layer in layers] for method in methods])
-
-        im = ax.imshow(data, aspect="auto", vmin=0, vmax=1, cmap="viridis")
-
-        ax.set_xticks(np.arange(len(layers)))
-        ax.set_xticklabels(layers)
-        ax.set_yticks(np.arange(len(methods)))
-        ax.set_yticklabels(methods, fontweight="bold")
-        ax.set_xlabel("Layer Index")
-        ax.set_title(title)
-
-    fig.subplots_adjust(right=0.88, hspace=0.75)
-    cbar_ax = fig.add_axes([0.90, 0.25, 0.015, 0.5]) 
-    fig.colorbar(im, cax=cbar_ax)
+    fig.tight_layout(rect=[0, 0, 1, 0.93])
     plt.show()
 
 
