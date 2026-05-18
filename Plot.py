@@ -405,3 +405,130 @@ def plot_relative_frobenius_by_rho(
     fig.tight_layout()
 
     plt.show()
+
+
+
+
+def plot_relative_frobenius_and_consistency(
+    model_baseline,
+    pruned_models_dict,
+    params_base,
+    X,
+    rho,
+    methods,
+    layer_param_idx,
+    device=None,
+    title=None
+):
+    if device is None:
+        device = next(model_baseline.parameters()).device
+
+    X = X.to(device)
+    model_baseline = model_baseline.to(device).eval()
+
+    A_base = get_layer_activation_matrix(
+        model_baseline, X, params_base, layer_param_idx
+    )
+    A_base = torch.as_tensor(A_base, device=device).float()
+
+    base_norm = torch.linalg.norm(A_base, ord="fro") + 1e-12
+    base_argmax = torch.argmax(A_base, dim=1)
+
+    rel_frob_results = []
+    consistency_results = []
+
+    for method in methods:
+        frob_values = []
+        consistency_values = []
+
+        for r in rho:
+            rho_key = f"{r:.2f}"
+
+            if method not in pruned_models_dict or rho_key not in pruned_models_dict[method]:
+                frob_values.append(np.nan)
+                consistency_values.append(np.nan)
+                continue
+
+            model = pruned_models_dict[method][rho_key].to(device).eval()
+            params = extract_params(model.model)
+
+            A = get_layer_activation_matrix(
+                model, X, params, layer_param_idx
+            )
+            A = torch.as_tensor(A, device=device).float()
+
+            rel_frob = torch.linalg.norm(A - A_base, ord="fro") / base_norm
+            frob_values.append(rel_frob.item())
+
+            argmax = torch.argmax(A, dim=1)
+            consistency = (argmax == base_argmax).float().mean().item()
+            consistency_values.append(consistency)
+
+        rel_frob_results.append(frob_values)
+        consistency_results.append(consistency_values)
+
+    #print(consistency_results)
+
+    fig, axes = plt.subplots(1, 2, figsize=(7.2, 2.8), dpi=400)
+
+    def draw_one(ax, ys, ylab, ttl):
+        for y, label in zip(ys, methods):
+            ax.plot(
+                rho,
+                y,
+                marker="o",
+                markersize=3.0,
+                linewidth=1.25,
+                label=label,
+                alpha=0.95,
+            )
+
+        ax.set_xlabel("Fraction of FLOPs Remaining", fontsize=8.5)
+        ax.set_ylabel(ylab, fontsize=8.5)
+
+        if ttl is not None:
+            ax.set_title(ttl, fontsize=9.5, pad=5)
+
+        ax.tick_params(axis="both", labelsize=7.5, width=0.7, length=3)
+        ax.grid(True, linestyle="--", linewidth=0.35, alpha=0.28)
+
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.spines["left"].set_linewidth(0.7)
+        ax.spines["bottom"].set_linewidth(0.7)
+
+        ax.margins(x=0.02, y=0.06)
+
+    draw_one(
+        axes[0],
+        rel_frob_results,
+        r"$\|Z-Z_0\|_F / \|Z_0\|_F$",
+        title,
+    )
+
+    draw_one(
+        axes[1],
+        consistency_results,
+        "Consistency Ratio",
+        None,
+    )
+
+    axes[1].set_ylim(0.0, 1.02)
+
+    handles, legend_labels = axes[0].get_legend_handles_labels()
+
+    fig.legend(
+        handles,
+        legend_labels,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 1.04),
+        ncol=3,
+        fontsize=7.5,
+        frameon=False,
+        handlelength=1.8,
+        columnspacing=1.2,
+    )
+
+    fig.tight_layout(rect=[0, 0, 1, 0.90])
+
+    plt.show()
