@@ -310,3 +310,98 @@ def plot_singular_values(
     plt.show()
 
 
+
+# Compare relative Frobenius norm of the final activation matrix
+def plot_relative_frobenius_by_rho(
+    model_baseline,
+    pruned_models_dict,
+    params_base,
+    X,
+    rho,
+    methods,
+    layer_param_idx,
+    device=None,
+    title=None
+):
+    if device is None:
+        device = next(model_baseline.parameters()).device
+
+    X = X.to(device)
+    model_baseline = model_baseline.to(device).eval()
+
+    A_base = get_layer_activation_matrix(
+        model_baseline, X, params_base, layer_param_idx
+    )
+    A_base = torch.as_tensor(A_base, device=device).float()
+    base_norm = torch.linalg.norm(A_base, ord="fro") + 1e-12
+    print(base_norm)
+
+    rel_frob_results = {}
+
+    for method in methods:
+        values = []
+
+        for r in rho:
+            rho_key = f"{r:.2f}"
+
+            if method not in pruned_models_dict or rho_key not in pruned_models_dict[method]:
+                values.append(np.nan)
+                continue
+
+            model = pruned_models_dict[method][rho_key].to(device).eval()
+            params = extract_params(model.model)
+
+            A = get_layer_activation_matrix(
+                model, X, params, layer_param_idx
+            )
+            A = torch.as_tensor(A, device=device).float()
+
+            rel_frob = torch.linalg.norm(A - A_base, ord="fro") / base_norm
+            values.append(rel_frob.item())
+
+        rel_frob_results[method] = values
+
+    fig, ax = plt.subplots(figsize=(4.8, 3.0), dpi=400)
+
+    for method in methods:
+        ax.plot(
+            rho,
+            rel_frob_results[method],
+            marker="o",
+            markersize=3.0,
+            linewidth=1.25,
+            label=method,
+            alpha=0.95,
+        )
+
+    ax.set_xlabel("Fraction of FLOPs Remaining", fontsize=8.5)
+    ax.set_ylabel(
+        r"$\|Z-Z_0\|_F / \|Z_0\|_F$",
+        fontsize=8.5,
+    )
+
+    ax.set_title(title, fontsize=9.5, pad=5)
+
+    ax.tick_params(axis="both", labelsize=7.5, width=0.7, length=3)
+    ax.grid(True, linestyle="--", linewidth=0.35, alpha=0.28)
+
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_linewidth(0.7)
+    ax.spines["bottom"].set_linewidth(0.7)
+
+    ax.margins(x=0.02, y=0.06)
+
+    ax.legend(
+        fontsize=7,
+        frameon=False,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 1.18),
+        ncol=3,
+        handlelength=1.8,
+        columnspacing=1.0,
+    )
+
+    fig.tight_layout()
+
+    plt.show()
