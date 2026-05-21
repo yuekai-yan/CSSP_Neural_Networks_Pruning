@@ -495,7 +495,7 @@ def layer_pruning(params, l, layer_type, global_idx, X, model, method, keep_rank
 
         match layer_type_next:
             case 'Linear' | 'LinearBNReLU':
-                W_hat_next = W_next @ T.T    # in_neurons: m -> k, i.e. (out_neurons, m) -> (out_neurons, k)
+                W_hat_next = W_next @ T.T    # T -> (k, m), in_neurons: m -> k, i.e. (out_neurons, m) -> (out_neurons, k)
                 b_hat_next = b_next.clone()                 
                                 
             case 'Conv2d' | 'ConvBNReLU':                

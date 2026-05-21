@@ -95,6 +95,7 @@ def iterative_magnitude_pruning(
     accs = []
     test_losses = []
     layerwise_history = {}
+    pruned_models = {}
 
     for target_ratio in rho:
         while P > P0 * target_ratio:
@@ -210,6 +211,7 @@ def iterative_magnitude_pruning(
         accs.append(acc)
         test_losses.append(test_loss)
         layerwise_history[f"{target_ratio:.2f}"] = get_unstructured_layerwise_retention(model, masks)
+        pruned_models[f"{target_ratio:.2f}"] = copy.deepcopy(model).cpu()
 
         print(
             f"Target params ratio: {target_ratio:.2f}, "
@@ -219,7 +221,7 @@ def iterative_magnitude_pruning(
 
     print(f"Nonzero params after pruning: {P0} -> {P}, ratio = {P / P0:.4f}")
 
-    return model, accs, test_losses, layerwise_history
+    return model, accs, test_losses, layerwise_history, pruned_models
 
 
 # record per-layer nonzero weight ratio

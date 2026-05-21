@@ -4,9 +4,8 @@ import torch
 from Pruning.pruning_CSSP import *
 
 # For pruning curve
-def plot_pruning_curve(base_acc, ratios, accs, labels, crit, ylabel,
-                       title=None,
-                       base_loss=None, losses=None):
+def plot_pruning_curve(base_acc, ratios, accs, labels, crit, dataset, base_loss=None, losses=None, title=None):
+
     two_plots = base_loss is not None and losses is not None
 
     if two_plots:
@@ -68,7 +67,7 @@ def plot_pruning_curve(base_acc, ratios, accs, labels, crit, ylabel,
 
         ax.margins(x=0.02, y=0.06)
 
-    draw_one(axes[0], base_acc, accs, ylabel, title)
+    draw_one(axes[0], base_acc, accs, "Accuracy", title)
 
     if two_plots:
         draw_one(axes[1], base_loss, losses, "Test Loss", None)
@@ -88,8 +87,8 @@ def plot_pruning_curve(base_acc, ratios, accs, labels, crit, ylabel,
         )
 
         fig.tight_layout(rect=[0, 0, 1, 0.90])
-        plt.savefig("pruning_curve_acc_loss.pdf", bbox_inches="tight")
-        plt.savefig("pruning_curve_acc_loss.png", dpi=400, bbox_inches="tight")
+        if dataset == "CIFAR10":
+            plt.savefig(f"fig/acc_loss_{crit}.pdf", bbox_inches="tight")
 
     else:
         axes[0].legend(
@@ -103,14 +102,14 @@ def plot_pruning_curve(base_acc, ratios, accs, labels, crit, ylabel,
         )
 
         fig.tight_layout()
-        plt.savefig("pruning_curve.pdf", bbox_inches="tight")
-        plt.savefig("pruning_curve.png", dpi=400, bbox_inches="tight")
+        if dataset == "CIFAR10":
+            plt.savefig(f"fig/acc_{crit}.pdf", bbox_inches="tight")
 
     plt.show()
 
 
 # For layerwise retention heatmap
-def plot_layerwise_retention_heatmap(heatmap_data, title=None):
+def plot_layerwise_retention_heatmap(heatmap_data, crit, dataset, title=None):
     methods = list(heatmap_data.keys())
 
     layers = sorted({
@@ -176,6 +175,8 @@ def plot_layerwise_retention_heatmap(heatmap_data, title=None):
     cbar.outline.set_linewidth(0.6)
 
     fig.tight_layout()
+    if dataset == "CIFAR10":
+        fig.savefig(f"fig/heatmap_{crit}.pdf", bbox_inches="tight")
     plt.show()
 
 # For singular value
@@ -187,6 +188,10 @@ def plot_singular_values(
     layer_ls,
     rho_key,
     methods,
+    crit,
+    ls_idx,
+    dataset,
+    normalize_info,
     device=None,
     log_scale=True,
     normalize=True,
@@ -307,108 +312,13 @@ def plot_singular_values(
         fig.suptitle(title, fontsize=10, y=1.08)
 
     fig.tight_layout(rect=[0, 0, 1, 0.93])
+    if dataset == "CIFAR10":
+        fig.savefig(f"fig/singular_value_{crit}_{ls_idx}_{normalize_info}.pdf", bbox_inches="tight")
     plt.show()
 
 
 
-# Compare relative Frobenius norm of the final activation matrix
-def plot_relative_frobenius_by_rho(
-    model_baseline,
-    pruned_models_dict,
-    params_base,
-    X,
-    rho,
-    methods,
-    layer_param_idx,
-    device=None,
-    title=None
-):
-    if device is None:
-        device = next(model_baseline.parameters()).device
-
-    X = X.to(device)
-    model_baseline = model_baseline.to(device).eval()
-
-    A_base = get_layer_activation_matrix(
-        model_baseline, X, params_base, layer_param_idx
-    )
-    A_base = torch.as_tensor(A_base, device=device).float()
-    base_norm = torch.linalg.norm(A_base, ord="fro") + 1e-12
-    print(base_norm)
-
-    rel_frob_results = {}
-
-    for method in methods:
-        values = []
-
-        for r in rho:
-            rho_key = f"{r:.2f}"
-
-            if method not in pruned_models_dict or rho_key not in pruned_models_dict[method]:
-                values.append(np.nan)
-                continue
-
-            model = pruned_models_dict[method][rho_key].to(device).eval()
-            params = extract_params(model.model)
-
-            A = get_layer_activation_matrix(
-                model, X, params, layer_param_idx
-            )
-            A = torch.as_tensor(A, device=device).float()
-
-            rel_frob = torch.linalg.norm(A - A_base, ord="fro") / base_norm
-            values.append(rel_frob.item())
-
-        rel_frob_results[method] = values
-
-    fig, ax = plt.subplots(figsize=(4.8, 3.0), dpi=400)
-
-    for method in methods:
-        ax.plot(
-            rho,
-            rel_frob_results[method],
-            marker="o",
-            markersize=3.0,
-            linewidth=1.25,
-            label=method,
-            alpha=0.95,
-        )
-
-    ax.set_xlabel("Fraction of FLOPs Remaining", fontsize=8.5)
-    ax.set_ylabel(
-        r"$\|Z-Z_0\|_F / \|Z_0\|_F$",
-        fontsize=8.5,
-    )
-
-    ax.set_title(title, fontsize=9.5, pad=5)
-
-    ax.tick_params(axis="both", labelsize=7.5, width=0.7, length=3)
-    ax.grid(True, linestyle="--", linewidth=0.35, alpha=0.28)
-
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.spines["left"].set_linewidth(0.7)
-    ax.spines["bottom"].set_linewidth(0.7)
-
-    ax.margins(x=0.02, y=0.06)
-
-    ax.legend(
-        fontsize=7,
-        frameon=False,
-        loc="upper center",
-        bbox_to_anchor=(0.5, 1.18),
-        ncol=3,
-        handlelength=1.8,
-        columnspacing=1.0,
-    )
-
-    fig.tight_layout()
-
-    plt.show()
-
-
-
-
+# plot_relative_frobenius_and_consistency
 def plot_relative_frobenius_and_consistency(
     model_baseline,
     pruned_models_dict,
@@ -417,6 +327,8 @@ def plot_relative_frobenius_and_consistency(
     rho,
     methods,
     layer_param_idx,
+    crit,
+    dataset,
     device=None,
     title=None
 ):
@@ -530,5 +442,6 @@ def plot_relative_frobenius_and_consistency(
     )
 
     fig.tight_layout(rect=[0, 0, 1, 0.90])
-
+    if dataset == "CIFAR10":
+        fig.savefig(f"fig/fro_norm_{crit}.pdf", bbox_inches="tight")
     plt.show()
