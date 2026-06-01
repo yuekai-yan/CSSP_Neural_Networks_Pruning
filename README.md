@@ -32,10 +32,8 @@ Key findings include:
 
 * CSSP-based pruning preserves the singular value spectra of activation matrices more faithfully than conventional pruning methods, indicating better preservation of the underlying representation subspaces.
 
-* Experiments reveal a structured pattern of rank degradation during pruning: representation collapse typically begins in deeper convolutional blocks and progressively propagates to downstream layers. CSSP-based methods significantly mitigate this effect.
+* Experiments reveal a structured pattern of rank degradation during pruning: representation collapse typically begins in deeper convolutional blocks and progressively propagates to downstream linear layers and earlier convolutional blocks. CSSP-based methods significantly mitigate this effect.
 ![flops](fig/singular_value_flops_chosen_None.png)
-
-* Among all evaluated methods, StrongRRQR, RPCholesky, and ARP consistently achieve superior trade-offs between compression ratio and classification accuracy compared with classical pruning methods.
 
 ## Folder Structure
 ```
