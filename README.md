@@ -18,7 +18,7 @@ The essence of computing the `prunability score` lies in first computing an inex
 │   ├── ARP.py
 │   ├── RPCholesky.py
 │   ├── StrongRRQR.py
-├── Pruning                  # This directory contains all the pruning techniques in the project
+├── Pruning                    # This directory contains all the pruning techniques in the project
 │   ├── magnitude_pruning.py
 │   ├── pruning_CSSP.py
 │   └── pruning_filter.py
