@@ -45,8 +45,8 @@ Key findings include:
 │   ├── magnitude_pruning.py
 │   ├── pruning_CSSP.py
 │   └── pruning_filter.py
-├── saved model and data       # This directory contains the pretrained baseline model for CIFAR10
 ├── fig                        # This directory contains all the figures in the project
+├── saved model and data       # This directory contains the pretrained baseline model for CIFAR10
 ├── CIFAR10.ipynb              # This script contains the experiments on CIFAR-10
 ├── MNIST.ipynb                # This script contains the experiments on MNIST
 ├── Plot.py                    # This script is used to plot all the figures in the project
