@@ -12,8 +12,20 @@ We use an iterative pruning strategy, which means that there are 2 steps in each
 
 The essence of computing the `prunability score` lies in first computing an inexpensive QR decomposition of the corresponding forward matrix for each layer, which means that we can design different ways of such computation for different CSS methods in order to better align with the pruning process in the second step.
 
-Specifically, we use:
-
-- **StrongRRQR** → **Pivoted QR**
-- **ARP** → **Sketched Pivoted QR**
-- **RPCholesky** → **Pivoted QR**
+## Folder Structure
+```
+├── CSSP                       # This directory contains all the CSSP techniques in the project
+│   ├── ARP.py
+│   ├── RPCholesky.py
+│   ├── StrongRRQR.py
+├── Pruning                  # This directory contains all the pruning techniques in the project
+│   ├── magnitude_pruning.py
+│   ├── pruning_CSSP.py
+│   └── pruning_filter.py
+├── saved model and data       # This directory contains the pretrained model for CIFAR10
+├── fig                        # This directory contains all the figures in the project
+├── CIFAR10.ipynb              # This script contains the experiments on CIFAR-10
+├── MNIST.ipynb                # This script contains the experiments on MNIST
+├── Plot.py                    # This script is used to plot all the figures in the project
+├── model.py                   # This script contains the VGG-16 architecture for CIFAR-10
+```
