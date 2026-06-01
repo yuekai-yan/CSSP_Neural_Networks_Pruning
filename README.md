@@ -6,11 +6,36 @@ Our pruning approach is built upon **column subset selection (CSS)**, a classica
 
 Therefore, it is particularly well suited to real-world deployment scenarios involving **edge devices**, **mobile platforms**, **embedded AI systems**, and other resource-constrained environments where inference efficiency and hardware-aware model design are of central importance. This project is motivated by the framework proposed by Chee et al. in [Model Preserving Compression for Neural Networks](https://proceedings.neurips.cc/paper_files/paper/2022/file/f8928b073ccbec15d35f2a9d39430bfd-Paper-Conference.pdf), and further explores alternative pruning strategies in this context.
 
-## Method
+## Key Features
 
-We use an iterative pruning strategy, which means that there are 2 steps in each pruning loop: the first is selecting the most prunable layer / channel by computing a `prunability score`, and the second is pruning this selected layer / channel using different CSS methods (e.g. StrongRRQR, ARP, RPCholesky).
+* **Structured pruning via Column Subset Selection (CSS)**
 
-The essence of computing the `prunability score` lies in first computing an inexpensive QR decomposition of the corresponding forward matrix for each layer, which means that we can design different ways of such computation for different CSS methods in order to better align with the pruning process in the second step.
+* **Multiple CSS algorithms from Numerical Linear Algebra**
+
+* **Iterative adaptive pruning strategy**
+
+* **Structured low-rank approximation of activation matrices**
+
+* **Effective downstream error correction**
+
+* **Hardware-friendly model compression**
+
+
+## Experimental Results
+![VGG16](fig/VGG16.png)
+Experiments were conducted on VGG-16 trained on CIFAR-10. The baseline model achieved **91.13% classification accuracy** before compression.
+
+Key findings include:
+
+* Under **FLOPs constraints**, CSSP-based pruning methods consistently outperform classical $\ell_1/\ell_2$ filter pruning, achieving higher accuracy, lower test loss, and smoother degradation as compression becomes more aggressive.
+![flops](fig/acc_loss_flops.png)
+
+* CSSP-based pruning preserves the singular value spectra of activation matrices more faithfully than conventional pruning methods, indicating better preservation of the underlying representation subspaces.
+
+* Experiments reveal a structured pattern of rank degradation during pruning: representation collapse typically begins in deeper convolutional blocks and progressively propagates to downstream layers. CSSP-based methods significantly mitigate this effect.
+![flops](fig/singular_value_flops_chosen_None.png)
+
+* Among all evaluated methods, StrongRRQR, RPCholesky, and ARP consistently achieve superior trade-offs between compression ratio and classification accuracy compared with classical pruning methods.
 
 ## Folder Structure
 ```
