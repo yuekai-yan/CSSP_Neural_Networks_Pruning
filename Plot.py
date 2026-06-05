@@ -19,10 +19,12 @@ def plot_pruning_curve(base_acc, ratios, accs, labels, crit, dataset, base_loss=
             ax.plot(
                 ratios, y,
                 marker="o",
-                markersize=3.0,
-                linewidth=1.25,
+                markersize=1.5,
+                linewidth=1.1,
                 label=label,
-                alpha=0.95,
+                alpha=0.9,
+                # for flops
+                #markevery=3,
             )
 
         ax.axhline(
@@ -213,6 +215,17 @@ def plot_singular_values(
     singular_values_dict = {}
 
     for i, (ax, l) in enumerate(zip(axes, layer_ls)):
+        layer_to_block = {
+            **dict.fromkeys((0, 1), 'conv1'),
+            **dict.fromkeys((2, 3), 'conv2'),
+            **dict.fromkeys((4, 5, 6), 'conv3'),
+            **dict.fromkeys((7, 8, 9), 'conv4'),
+            **dict.fromkeys((10, 11, 12), 'conv5'),
+            **dict.fromkeys((14, 15), 'linear'),
+        }
+
+        block = layer_to_block.get(l, 'last layer')
+
         singular_values_dict[l] = {}
 
         # baseline
@@ -281,7 +294,7 @@ def plot_singular_values(
             ax.set_ylabel("")
 
         ax.set_title(
-            f"Layer {params_base[l]['layer_idx']}",
+            f"Layer {params_base[l]['layer_idx']} ({block})",
             fontsize=9.5,
             pad=5,
         )
@@ -389,10 +402,11 @@ def plot_relative_frobenius_and_consistency(
                 rho,
                 y,
                 marker="o",
-                markersize=3.0,
-                linewidth=1.25,
+                markersize=1.5,
+                linewidth=1.1,
                 label=label,
-                alpha=0.95,
+                alpha=0.9,
+                #markevery=3,
             )
 
         ax.set_xlabel("Fraction of FLOPs Remaining", fontsize=8.5)
@@ -444,4 +458,163 @@ def plot_relative_frobenius_and_consistency(
     fig.tight_layout(rect=[0, 0, 1, 0.90])
     if dataset == "CIFAR10":
         fig.savefig(f"fig/fro_norm_{crit}.pdf", bbox_inches="tight")
+    plt.show()
+
+
+
+# compare fixed layer variation under different keep ratio
+def plot_singular_values_fixed_layer(
+    pruned_models_dict,
+    model_baseline,
+    params_base,
+    X,
+    layer_idxs,
+    rho,
+    methods,
+    crit,
+    dataset,
+    normalize_info,
+    device=None,
+    log_scale=True,
+    normalize=True,
+    title=None,
+):
+
+    if device is None:
+        try:
+            device = next(model_baseline.parameters()).device
+        except StopIteration:
+            device = torch.device("cpu")
+
+    X = X.to(device)
+    model_baseline = model_baseline.to(device).eval()
+
+    n_rows = len(layer_idxs)
+    n_cols = 4
+
+    fig, axes = plt.subplots(
+        n_rows,
+        n_cols,
+        figsize=(3.2 * n_cols, 2.4 * n_rows),
+        dpi=400,
+        squeeze=False,
+    )
+
+    layer_to_block = {
+        **dict.fromkeys((0, 1), "conv1"),
+        **dict.fromkeys((2, 3), "conv2"),
+        **dict.fromkeys((4, 5, 6), "conv3"),
+        **dict.fromkeys((7, 8, 9), "conv4"),
+        **dict.fromkeys((10, 11, 12), "conv5"),
+        **dict.fromkeys((14, 15), "linear"),
+    }
+
+    singular_values_dict = {}
+
+    for row, l in enumerate(layer_idxs):
+        block = layer_to_block.get(l, "last layer")
+        singular_values_dict[l] = {}
+
+        A_base = get_layer_activation_matrix(model_baseline, X, params_base, l)
+        s_base = compute_singular_values(A_base)
+
+        if normalize:
+            s_base = s_base / (s_base[0] + 1e-12)
+
+        for col, r in enumerate(rho):
+            ax = axes[row, col]
+
+            singular_values_dict[l][r] = {}
+            singular_values_dict[l][r]["Baseline"] = s_base
+
+            for method in methods:
+                if method not in pruned_models_dict:
+                    print(f"[Skip] method {method} not found.")
+                    continue
+
+                if r not in pruned_models_dict[method]:
+                    print(f"[Skip] rho_key {r} not found for method {method}.")
+                    continue
+
+                model = pruned_models_dict[method][r].to(device).eval()
+                params = extract_params(model.model)
+
+                A = get_layer_activation_matrix(model, X, params, l)
+                s = compute_singular_values(A)
+
+                if normalize:
+                    s = s / (s[0] + 1e-12)
+
+                singular_values_dict[l][r][method] = s
+
+                ax.plot(
+                    np.arange(1, len(s) + 1),
+                    s,
+                    marker="o",
+                    markersize=1.0,
+                    linewidth=0.8,
+                    label=method,
+                    alpha=0.95,
+                )
+
+            ax.plot(
+                np.arange(1, len(s_base) + 1),
+                s_base,
+                linewidth=1.2,
+                linestyle=(0, (4, 2)),
+                color="0.25",
+                label="Baseline",
+                zorder=0,
+            )
+
+            if log_scale:
+                ax.set_yscale("log")
+
+            if row == n_rows - 1:
+                ax.set_xlabel("Singular value index", fontsize=8.5)
+            else:
+                ax.set_xlabel("")
+
+            if col == 0:
+                ax.set_ylabel(
+                    r"$\sigma_i / \sigma_1$" if normalize else "Singular Value",
+                    fontsize=8.5,
+                )
+            else:
+                ax.set_ylabel("")
+
+            ax.set_title(
+                f"Layer {params_base[l]['layer_idx']} ({block}), rho={r}",
+                fontsize=9.5,
+                pad=5,
+            )
+
+            ax.tick_params(axis="both", labelsize=7.5, width=0.7, length=3)
+            ax.grid(True, linestyle="--", linewidth=0.35, alpha=0.28)
+
+            ax.spines["top"].set_visible(False)
+            ax.spines["right"].set_visible(False)
+            ax.spines["left"].set_linewidth(0.7)
+            ax.spines["bottom"].set_linewidth(0.7)
+
+    handles, legend_labels = axes[0, 0].get_legend_handles_labels()
+
+    fig.legend(
+        handles,
+        legend_labels,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 1.03),
+        ncol=3,
+        fontsize=7.5,
+        frameon=False,
+        handlelength=1.8,
+        columnspacing=1.2,
+    )
+
+    if title:
+        fig.suptitle(title, fontsize=10, y=1.08)
+
+    fig.tight_layout()
+    if dataset == "CIFAR10":
+        fig.savefig(f"fig/layers_vary_{crit}_{normalize_info}.pdf", bbox_inches="tight")
     plt.show()
