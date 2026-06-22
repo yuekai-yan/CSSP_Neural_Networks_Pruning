@@ -33,7 +33,7 @@ Key findings include:
 * CSSP-based pruning preserves the singular value spectra of activation matrices more faithfully than conventional pruning methods, indicating better preservation of the underlying representation subspaces.
 ![flops](fig/singular_value_flops_chosen_None.png)
 
-* Experiments reveal a **discernible trend** of rank degradation during pruning: representation collapse typically begins in deeper convolutional blocks and progressively propagates to downstream linear layers and earlier convolutional blocks. CSSP-based methods significantly mitigate this effect. (see [filter pruning](https://github.com/yuekai-yan/CSSP_Neural_Networks_Pruning/blob/main/fig/layers_vary_flops_normalized.pdf) and [magnitude pruning](https://github.com/yuekai-yan/CSSP_Neural_Networks_Pruning/blob/main/fig/layers_vary_params_normalized.pdf))
+* Experiments show a **discernible trend** of rank degradation during pruning: representation collapse typically begins in deeper convolutional blocks and progressively propagates to downstream linear layers and earlier convolutional blocks. CSSP-based methods significantly mitigate this effect. (see [filter pruning](https://github.com/yuekai-yan/CSSP_Neural_Networks_Pruning/blob/main/fig/layers_vary_flops_normalized.pdf) and [magnitude pruning](https://github.com/yuekai-yan/CSSP_Neural_Networks_Pruning/blob/main/fig/layers_vary_params_normalized.pdf))
 
 ## Folder Structure
 ```
