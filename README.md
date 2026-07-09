@@ -35,6 +35,38 @@ Key findings include:
 
 * Experiments show a **discernible trend** of rank degradation during pruning: representation collapse typically begins in deeper convolutional blocks and progressively propagates to downstream linear layers and earlier convolutional blocks. CSSP-based methods significantly mitigate this effect. (see [filter pruning](https://github.com/yuekai-yan/CSSP_Neural_Networks_Pruning/blob/main/fig/layers_vary_flops_normalized.pdf) and [magnitude pruning](https://github.com/yuekai-yan/CSSP_Neural_Networks_Pruning/blob/main/fig/layers_vary_params_normalized.pdf))
 
+## Deployment & ONNX Benchmark
+
+To evaluate the deployability of the compressed models, both the baseline VGG-16 model and the ARP-pruned model (40% FLOPs) were exported from PyTorch to ONNX. The exported models were validated using ONNX Runtime by comparing numerical outputs, prediction consistency, inference latency, and model size.
+
+| Metric | Baseline | ARP (40% FLOPs) | Improvement |
+| :--- | ---: | ---: | ---: |
+| ONNX Model Size | **57.67 MB** | **19.51 MB** | **−66.2%** |
+| Mean Latency | **1.0365 ms** | **0.6201 ms** | **1.67× faster** |
+| P95 Latency | **1.0962 ms** | **0.7255 ms** | **−33.8%** |
+| Prediction Consistency | **100%** | **100%** | Maintained |
+| Max Absolute Difference | **4.77×10⁻⁶** | **4.77×10⁻⁶** | Numerical equivalence |
+
+**Deployment pipeline**
+
+```
+PyTorch
+    │
+    ▼
+Export to ONNX
+    │
+    ▼
+ONNX Checker
+    │
+    ▼
+ONNX Runtime Validation
+    │
+    ├── Output Correctness
+    ├── Prediction Consistency
+    ├── Latency Benchmark
+    └── Model Size Analysis
+```
+
 ## Folder Structure
 ```
 ├── CSSP                       # This directory contains all the CSSP techniques in the project
